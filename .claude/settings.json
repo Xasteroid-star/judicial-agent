@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip *)",
+      "Bash(python *)",
+      "Bash(uvicorn *)",
+      "Bash(make *)",
+      "Bash(mkdir *)",
+      "Bash(find *)",
+      "Bash(rm *)",
+      "Bash(git *)",
+      "Edit(.claude)"
+    ]
+  }
+}

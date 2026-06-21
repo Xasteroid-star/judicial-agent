@@ -1,0 +1,36 @@
+law_id: exclusion_illegal_evidence
+jurisdiction: china
+law_name: 关于办理刑事案件严格排除非法证据若干问题的规定
+law_type: judicial_interpretation
+citation: 法发〔2017〕15号
+promulgated_by: "最高人民法院、最高人民检察院、公安部、国家安全部、司法部"
+promulgated_date: "2017-06-20"
+effective_date: "2017-06-27"
+approved_by: "中央全面深化改革领导小组第34次会议（2017年4月18日）"
+articles_count: 42
+scope_domains:
+  - criminal_procedure
+  - evidence
+  - illegal_evidence_exclusion
+  - interrogation
+  - defense_rights
+  - trial_procedure
+key_concepts:
+  - 绝对排除（刑讯逼供、暴力威胁取得的供述）
+  - 相对排除（程序瑕疵的物证书证）
+  - 重复性供述排除规则
+  - 证明责任倒置（检察院证明合法性）
+  - 庭前会议制度
+  - 侦查人员出庭作证
+  - 不能排除存在非法取证即排除
+  - 驻所检察核查制度
+source_url: https://www.spp.gov.cn/zdgz/201706/t20170627_194051.shtml
+source_type: official_judicial
+retrieved_on: "2026-06-21"
+verified_against_primary: true
+language: zh-CN
+notes: |
+  本规定是2012年刑诉法确立非法证据排除规则以来最系统的司法解释，
+  共42条，覆盖侦查、审查逮捕、审查起诉、辩护、审判、二审、死刑复核
+  全流程。核心亮点：(1)第5条重复性供述排除规则；(2)第34条「不能排除
+  存在非法取证即排除」的证明标准；(3)第14条驻所检察侦查终结前核查制度。

@@ -1,0 +1,47 @@
+law_id: electronic_data_rules
+jurisdiction: china
+law_name: 关于办理刑事案件收集提取和审查判断电子数据若干问题的规定
+law_type: judicial_interpretation
+citation: 法发〔2016〕22号
+promulgated_by: "最高人民法院、最高人民检察院、公安部"
+promulgated_date: "2016-09-09"
+effective_date: "2016-10-01"
+articles_count: 30
+chapters:
+  - 一般规定（第1-6条）
+  - 电子数据的收集与提取（第7-17条）
+  - 电子数据的移送与展示（第18-21条）
+  - 电子数据的审查与判断（第22-28条）
+  - 附则（第29-30条）
+scope_domains:
+  - criminal_procedure
+  - evidence
+  - electronic_data
+  - digital_forensics
+  - data_integrity
+  - chain_of_custody
+key_concepts:
+  - 电子数据四大类（网络发布信息、通信信息、身份认证与交易记录、电子文件）
+  - 数字化记录的口供不属于电子数据
+  - 原始存储介质扣押封存原则
+  - 完整性校验值
+  - 网络远程勘验
+  - 电子数据冻结
+  - 写保护设备检查
+  - 数字签名与数字证书
+  - 三性审查（真实性、合法性、关联性）
+  - 程序瑕疵补正与绝对排除
+  - 鉴定人出庭作证制度
+source_url: https://www.spp.gov.cn/spp/zdgz/201609/t20160921_167425.shtml
+source_type: official_judicial
+retrieved_on: "2026-06-21"
+verified_against_primary: true
+language: zh-CN
+notes: |
+  本规定是中国首个系统性规范电子数据证据全流程的司法解释。核心贡献：
+  (1) 首次在法律层面定义电子数据的四种类别；
+  (2) 建立了「扣押封存原盘优先→提取数据备选→打印拍照兜底」的三级取证体系；
+  (3) 引入完整性校验值等技术性保护措施；
+  (4) 确立电子数据的「三性」审查标准（第22-28条）；
+  (5) 区分程序瑕疵可补正（第27条）与绝对排除（第28条）。
+  与2012年刑诉法第48条「电子数据」入法相配套。

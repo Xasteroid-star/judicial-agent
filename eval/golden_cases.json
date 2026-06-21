@@ -1,0 +1,72 @@
+[
+  {
+    "case_id": "golden-001",
+    "case_name": "故意伤害案（证据完整）",
+    "query": "该案证据链是否完整？",
+    "case_context": "2024年王某用刀刺伤李某，有监控录像、DNA鉴定、目击证人3人、凶器已提取、被害人陈述、被告人供述一致。",
+    "expected": {
+      "evidence_chain_complete": true,
+      "confidence_min": 0.80,
+      "expected_citations": ["鉴定意见", "证人证言", "物证", "监控录像"],
+      "expected_legal_basis": ["刑法第234条"],
+      "should_not_contain": ["证据不足", "无法认定"]
+    }
+  },
+  {
+    "case_id": "golden-002",
+    "case_name": "盗窃案（证据严重不足）",
+    "query": "该案能否定罪？",
+    "case_context": "2024年3月某小区发生入室盗窃，仅有被害人报案记录，无现场勘查、无监控、无指纹、无目击证人。",
+    "expected": {
+      "evidence_chain_complete": false,
+      "confidence_max": 0.50,
+      "expected_citations": [],
+      "expected_legal_basis": ["刑法第264条"],
+      "should_contain": ["证据不足", "无法认定", "补充侦查"],
+      "should_not_contain": ["证据确实充分"]
+    }
+  },
+  {
+    "case_id": "golden-003",
+    "case_name": "诈骗案（含非法证据主张）",
+    "query": "能否排除非法证据？",
+    "case_context": "2024年张某电信诈骗案，有银行流水、微信记录、被害人陈述。张某辩称讯问时遭威胁。讯问录音录像缺失。",
+    "expected": {
+      "evidence_chain_complete": true,
+      "confidence_min": 0.40,
+      "confidence_max": 0.75,
+      "expected_citations": ["银行流水", "微信记录"],
+      "expected_legal_basis": ["排除非法证据规定"],
+      "should_contain": ["录音录像", "不能排除"],
+      "should_not_contain": ["证据确实充分"]
+    }
+  },
+  {
+    "case_id": "golden-004",
+    "case_name": "帮信罪（电子数据为主）",
+    "query": "电子数据证据是否充分？",
+    "case_context": "赵某出售银行卡给诈骗团伙使用。有银行卡交易流水、微信聊天记录、IP登录日志、服务器日志。无口供。",
+    "expected": {
+      "evidence_chain_complete": true,
+      "confidence_min": 0.70,
+      "expected_citations": ["交易流水", "聊天记录", "登录日志"],
+      "expected_legal_basis": ["电子数据规定", "刑法第287条之二"],
+      "should_contain": ["电子数据", "完整性"],
+      "should_not_contain": ["证据不足"]
+    }
+  },
+  {
+    "case_id": "golden-005",
+    "case_name": "毒品案（仅有口供）",
+    "query": "仅有口供能否定罪？",
+    "case_context": "王某被举报贩毒，仅有本人供述和一名吸毒人员指认。未查获毒品实物，无交易记录，无监控。",
+    "expected": {
+      "evidence_chain_complete": false,
+      "confidence_max": 0.40,
+      "expected_citations": [],
+      "expected_legal_basis": ["刑诉法第55条"],
+      "should_contain": ["不能认定", "口供", "补强"],
+      "should_not_contain": ["证据确实充分", "可以认定"]
+    }
+  }
+]

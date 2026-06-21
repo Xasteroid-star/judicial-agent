@@ -1,0 +1,36 @@
+law_id: criminal_procedure_evidence
+jurisdiction: china
+law_name: 中华人民共和国刑事诉讼法·第五章 证据
+law_type: statute
+citation: 中华人民共和国刑事诉讼法（2018年修正）第五章
+promulgated_by: 全国人民代表大会常务委员会
+promulgated_date: "2018-10-26"
+effective_date: "2018-10-26"
+amendments:
+  - "2012-03-14 第十一届全国人大第五次会议修正"
+  - "2018-10-26 第十三届全国人大常委会第六次会议修正"
+articles_range: "50-64"
+chapter: "第五章 证据"
+scope_domains:
+  - criminal_procedure
+  - evidence
+  - illegal_evidence_exclusion
+  - witness_protection
+  - burden_of_proof
+  - standard_of_proof
+key_concepts:
+  - 证据种类（8类）
+  - 举证责任分配
+  - 非法证据排除（第54-59条）
+  - 证明标准：排除合理怀疑
+  - 口供补强规则
+  - 证人保护制度
+source_url: http://www.npc.gov.cn/
+source_type: official_legislative
+retrieved_on: "2026-06-21"
+verified_against_primary: true
+language: zh-CN
+notes: |
+  本章是刑事诉讼证据制度的基石。第55条确立了「排除合理怀疑」的证明标准，
+  取代了原有的「证据确实充分」单一标准。第54-59条构建了中国特色的
+  非法证据排除规则体系，区分了言词证据的绝对排除与实物证据的相对排除。

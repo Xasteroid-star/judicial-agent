@@ -1,0 +1,37 @@
+law_id: criminal_law_key_articles
+jurisdiction: china
+law_name: 中华人民共和国刑法·关键罪名条文
+law_type: statute
+citation: 中华人民共和国刑法（2020年修正）
+promulgated_by: 全国人民代表大会
+promulgated_date: "1979-07-01"
+effective_date: "2020-12-26"
+amendments:
+  - "1997-03-14 全面修订"
+  - "2020-12-26 刑法修正案（十一）"
+scope_domains:
+  - criminal_law
+  - violent_crime
+  - property_crime
+  - drug_crime
+  - corruption
+  - cyber_crime
+key_concepts:
+  - 故意杀人罪（第232条）
+  - 故意伤害罪（第234条）
+  - 抢劫罪（第263条）
+  - 盗窃罪（第264条）
+  - 诈骗罪（第266条）
+  - 帮助信息网络犯罪活动罪（第287条之二）
+  - 走私贩卖运输制造毒品罪（第347条）
+  - 贪污罪（第382条）
+  - 受贿罪（第385条）
+source_url: http://www.npc.gov.cn/
+source_type: official_legislative
+retrieved_on: "2026-06-21"
+verified_against_primary: true
+language: zh-CN
+articles_count: 9
+notes: |
+  提取了评测案例涉及的 9 个关键罪名条文。完整刑法共 452 条，
+  MVP 阶段只包含证据链分析最常用的罪名条文。

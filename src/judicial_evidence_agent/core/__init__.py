@@ -1,0 +1,1 @@
+"""Core 包 — 纯 Python 证据链逻辑。不依赖 FastAPI 或任何 Web 框架。"""
