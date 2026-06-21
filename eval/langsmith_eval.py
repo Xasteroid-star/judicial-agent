@@ -259,7 +259,7 @@ def main():
 
         avg = round(sum(scores.values()) / max(len(scores), 1), 3) if scores else 0
         run_name = r["run"].name or "?"
-        bar = "█" * int(avg * 10) + "░" * (10 - int(avg * 10))
+        bar = "#" * int(avg * 10) + "-" * (10 - int(avg * 10))
         print(f"\n  [{bar}] {run_name}")
         for k, v in scores.items():
             print(f"    {k:20s}: {v:.3f}")
