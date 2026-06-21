@@ -62,5 +62,5 @@ for c in new_cases:
 
 dataset = client.read_dataset(dataset_name=DATASET_NAME)
 client.create_examples(dataset_id=dataset.id, examples=examples)
-print(f"✅ 追加 {len(examples)} 条: {[c['case_name'] for c in new_cases]}")
-print(f"🔗 当前共 {existing_count + len(examples)} 条: https://smith.langchain.com/datasets/{dataset.id}")
+print(f" 追加 {len(examples)} 条: {[c['case_name'] for c in new_cases]}")
+print(f" 当前共 {existing_count + len(examples)} 条: https://smith.langchain.com/datasets/{dataset.id}")

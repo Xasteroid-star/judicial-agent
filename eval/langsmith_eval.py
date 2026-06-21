@@ -50,7 +50,7 @@ def target(inputs: dict) -> dict:
     # 提取报告
     report_text = result.get("report", {}).get("markdown", "")
 
-    print(f"\n  📋 [target] case={inputs.get('case_name', '?')[:20]}")
+    print(f"\n   [target] case={inputs.get('case_name', '?')[:20]}")
     print(f"     confidence={final_conf:.3f}, chains={len(result.get('evidence_chains', []))}")
     print(f"     report_len={len(report_text)} chars")
 
@@ -90,7 +90,7 @@ def eval_citation(run, example) -> dict:
 
 
 def eval_confidence(run, example) -> dict:
-    """置信度校准：实际置信度是否在预期区间内。"""
+    """置信度校准：距离预期区间越近分越高，连续梯度评分。"""
     conf = float(run.outputs.get("confidence", 0))
 
     try:
@@ -99,14 +99,29 @@ def eval_confidence(run, example) -> dict:
     except (ValueError, TypeError):
         return {"key": "confidence", "score": 0.5, "comment": "预期区间未定义"}
 
-    if c_min is not None and conf < c_min:
-        return {"key": "confidence", "score": 0.0,
-                "comment": f"置信度 {conf:.2f} < 预期下限 {c_min}"}
-    if c_max is not None and conf > c_max:
-        return {"key": "confidence", "score": 0.0,
-                "comment": f"置信度 {conf:.2f} > 预期上限 {c_max}"}
-    return {"key": "confidence", "score": 1.0,
-            "comment": f"置信度 {conf:.2f} 在 [{c_min or '?', c_max or '?'}] 内"}
+    # 在区间内 → 满分
+    if c_min is not None and c_max is not None:
+        mid = (c_min + c_max) / 2
+        if c_min <= conf <= c_max:
+            score = 1.0
+        else:
+            distance = abs(conf - mid) - (c_max - c_min) / 2
+            score = max(0.0, 1.0 - distance / 0.3)
+    elif c_min is not None:
+        if conf >= c_min:
+            score = 1.0
+        else:
+            score = max(0.0, 1.0 - (c_min - conf) / 0.3)
+    elif c_max is not None:
+        if conf <= c_max:
+            score = 1.0
+        else:
+            score = max(0.0, 1.0 - (conf - c_max) / 0.3)
+    else:
+        return {"key": "confidence", "score": 0.5, "comment": "预期区间未定义"}
+
+    return {"key": "confidence", "score": round(score, 3),
+            "comment": f"实际 {conf:.2f} vs 预期 [{c_min or '?', c_max or '?'}] → {score:.2f}"}
 
 
 def eval_keywords(run, example) -> dict:
@@ -151,23 +166,35 @@ def eval_keywords(run, example) -> dict:
 
 
 def eval_chain_completeness(run, example) -> dict:
-    """证据链完整性判断：Agent 对证据充分性的判断是否正确。"""
+    """证据链完整性判断：梯度评分。
+
+    匹配度对照：
+    - 预期 pass → 实际 pass: 1.0
+    - 预期 pass → 实际 review: 0.6
+    - 预期 pass → 实际 reject: 0.2
+    - 预期 reject → 实际 reject: 1.0
+    - 预期 reject → 实际 review: 0.6
+    - 预期 reject → 实际 pass: 0.2
+    """
     chains = run.outputs.get("evidence_chains", [])
     expected_complete = example.outputs.get("evidence_chain_complete", "") == "True"
-
-    has_complete = any(c.get("status") == "pass" for c in chains)
     chain_statuses = [c.get("status") for c in chains]
+    actual = chain_statuses[0] if chain_statuses else "unknown"
 
-    if expected_complete == has_complete:
-        score = 1.0
-    else:
-        score = 0.2
+    # pass <-> review <-> reject 梯度
+    status_order = {"pass": 2, "review": 1, "reject": 0}
+    expected_order = 2 if expected_complete else 0
+    actual_order = status_order.get(actual, 1)
+    diff = abs(expected_order - actual_order)
+
+    score_map = {0: 1.0, 1: 0.6, 2: 0.2}
+    score = score_map[diff]
 
     return {
         "key": "chain_completeness",
         "score": score,
         "comment": f"预期={'完整' if expected_complete else '不足'}，"
-                   f"实际={chain_statuses}",
+                   f"实际={actual} → 差距{diff}档 → {score:.1f}",
     }
 
 
@@ -195,7 +222,7 @@ def main():
     )
     args = parser.parse_args()
 
-    print(f"🔬 评测开始")
+    print(f" 评测开始")
     print(f"   Dataset:    {args.dataset}")
     print(f"   Experiment: {args.experiment}")
     print(f"   模型:       DeepSeek V4")
@@ -246,8 +273,8 @@ def main():
         ) / max(len(results), 1),
         3,
     )
-    print(f"\n  📊 总体平均: {total_avg:.3f}")
-    print(f"\n🔗 LangSmith: https://smith.langchain.com/experiments")
+    print(f"\n   总体平均: {total_avg:.3f}")
+    print(f"\n LangSmith: https://smith.langchain.com/experiments")
 
 
 if __name__ == "__main__":

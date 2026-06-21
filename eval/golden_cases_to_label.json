@@ -1,0 +1,152 @@
+[
+  {
+    "case_id": "cail-labeled-001",
+    "case_name": "(0001)周某帮助信息网络犯罪活动罪案（帮助信息网络犯罪活动罪）",
+    "query": "该案证据链是否完整？能否认定帮助信息网络犯罪活动罪？",
+    "case_context": "2025年2月22日，被告人林某明知他人利用信息网络实施犯罪，仍将其名下的中国建设银行银行卡（卡号：6222********8359）及配套U盾、手机卡提供给他人使用。经查，上述银行卡被用于电信网络诈骗，支付结算金额共计人民币112元。\n\n证据材料：受案登记表、立案决定书: 证实案件来源及立案侦查经过。；户籍证明: 证实被告人的身份信息及刑事责任年龄。；胡某的证言: 证实案发经过。；吴某的陈述: 证实被盗窃的经过及损失情况。；讯问笔录: 被告人对犯罪事实的供述与辩解。",
+    "expected": {
+      "evidence_chain_complete": "TODO: true/false",
+      "confidence_min": "TODO",
+      "confidence_max": "TODO",
+      "expected_citations": "TODO: 证据1|证据2|...",
+      "expected_legal_basis": "TODO: 刑法第X条",
+      "should_contain": "TODO",
+      "should_not_contain": "TODO"
+    }
+  },
+  {
+    "case_id": "cail-labeled-002",
+    "case_name": "(0002)吴某故意伤害罪案（故意伤害罪）",
+    "query": "该案证据链是否完整？能否认定故意伤害罪？",
+    "case_context": "2023年5月15日，被告人孙某在成都市武侯区因琐事与被害人杨某发生争执，被告人孙某持铁管将被害人杨某打伤。经鉴定，被害人杨某的损伤程度为轻伤一级。案发后，被告人孙某被公安机关抓获归案。\n\n证据材料：受案登记表、立案决定书: 证实案件来源及立案侦查经过。；户籍证明: 证实被告人的身份信息及刑事责任年龄。；周某的证言: 证实被告人作案情况。；林某的陈述: 证实被盗窃的经过及损失情况。；讯问笔录: 被告人对犯罪事实的供述与辩解。",
+    "expected": {
+      "evidence_chain_complete": "TODO: true/false",
+      "confidence_min": "TODO",
+      "confidence_max": "TODO",
+      "expected_citations": "TODO: 证据1|证据2|...",
+      "expected_legal_basis": "TODO: 刑法第X条",
+      "should_contain": "TODO",
+      "should_not_contain": "TODO"
+    }
+  },
+  {
+    "case_id": "cail-labeled-003",
+    "case_name": "(0003)黄某开设赌场罪案（开设赌场罪）",
+    "query": "该案证据链是否完整？能否认定开设赌场罪？",
+    "case_context": "2020年1月28日，被告人刘某在广州市天河区，租赁房屋作为赌博场所，通过发放宣传单等方式组织他人赌博，从中抽头渔利共计人民币306元。\n\n证据材料：受案登记表、立案决定书: 证实案件来源及立案侦查经过。；户籍证明: 证实被告人的身份信息及刑事责任年龄。；林某的证言: 证实案发经过。；王某的陈述: 证实被伤害的经过及损失情况。；讯问笔录: 被告人对犯罪事实的供述与辩解。",
+    "expected": {
+      "evidence_chain_complete": "TODO: true/false",
+      "confidence_min": "TODO",
+      "confidence_max": "TODO",
+      "expected_citations": "TODO: 证据1|证据2|...",
+      "expected_legal_basis": "TODO: 刑法第X条",
+      "should_contain": "TODO",
+      "should_not_contain": "TODO"
+    }
+  },
+  {
+    "case_id": "cail-labeled-004",
+    "case_name": "(0004)吴某开设赌场罪案（开设赌场罪）",
+    "query": "该案证据链是否完整？能否认定开设赌场罪？",
+    "case_context": "2024年2月3日，被告人郭某在重庆市渝北区，租赁房屋作为赌博场所，通过微信群发等方式组织他人赌博，从中抽头渔利共计人民币141万元。\n\n证据材料：受案登记表、立案决定书: 证实案件来源及立案侦查经过。；户籍证明: 证实被告人的身份信息及刑事责任年龄。；李某的证言: 证实被告人作案情况。；徐某的陈述: 证实被伤害的经过及损失情况。；讯问笔录: 被告人对犯罪事实的供述与辩解。",
+    "expected": {
+      "evidence_chain_complete": "TODO: true/false",
+      "confidence_min": "TODO",
+      "confidence_max": "TODO",
+      "expected_citations": "TODO: 证据1|证据2|...",
+      "expected_legal_basis": "TODO: 刑法第X条",
+      "should_contain": "TODO",
+      "should_not_contain": "TODO"
+    }
+  },
+  {
+    "case_id": "cail-labeled-005",
+    "case_name": "(0005)赵某诈骗罪案（诈骗罪）",
+    "query": "该案证据链是否完整？能否认定诈骗罪？",
+    "case_context": "2021年8月26日，被告人朱某在上海市浦东新区，通过微信联系被害人赵某，虚构能够办理贷款，骗取被害人赵某人民币211元。被告人朱某将骗得的钱款用于个人挥霍。\n\n证据材料：受案登记表、立案决定书: 证实案件来源及立案侦查经过。；户籍证明: 证实被告人的身份信息及刑事责任年龄。；张某的证言: 证实被告人作案情况。；郭某的陈述: 证实被诈骗的经过及损失情况。；讯问笔录: 被告人对犯罪事实的供述与辩解。",
+    "expected": {
+      "evidence_chain_complete": "TODO: true/false",
+      "confidence_min": "TODO",
+      "confidence_max": "TODO",
+      "expected_citations": "TODO: 证据1|证据2|...",
+      "expected_legal_basis": "TODO: 刑法第X条",
+      "should_contain": "TODO",
+      "should_not_contain": "TODO"
+    }
+  },
+  {
+    "case_id": "cail-labeled-006",
+    "case_name": "(0006)马某盗窃罪案（盗窃罪）",
+    "query": "该案证据链是否完整？能否认定盗窃罪？",
+    "case_context": "2023年12月24日，被告人林某在广州市天河区某商场，趁无人之际，盗窃被害人郭某放置在办公桌抽屉内内的现金人民币30元及高档烟酒若干。经鉴定，被盗物品价值人民币97,434元。案发后，被盗财物已部分追回。\n\n证据材料：受案登记表、立案决定书: 证实案件来源及立案侦查经过。；户籍证明: 证实被告人的身份信息及刑事责任年龄。；罗某的证言: 证实赃款去向。；徐某的证言: 证实被告人作案情况。；吴某的证言: 证实被告人行踪。",
+    "expected": {
+      "evidence_chain_complete": "TODO: true/false",
+      "confidence_min": "TODO",
+      "confidence_max": "TODO",
+      "expected_citations": "TODO: 证据1|证据2|...",
+      "expected_legal_basis": "TODO: 刑法第X条",
+      "should_contain": "TODO",
+      "should_not_contain": "TODO"
+    }
+  },
+  {
+    "case_id": "cail-labeled-007",
+    "case_name": "(0007)孙某诈骗罪案（诈骗罪）",
+    "query": "该案证据链是否完整？能否认定诈骗罪？",
+    "case_context": "2022年3月15日，被告人林某在西安市雁塔区，通过微信联系被害人吴某，虚构有高收益理财产品，骗取被害人吴某人民币142万元。被告人林某将骗得的钱款用于购买房产。\n\n证据材料：受案登记表、立案决定书: 证实案件来源及立案侦查经过。；户籍证明: 证实被告人的身份信息及刑事责任年龄。；陈某的证言: 证实赃款去向。；林某的证言: 证实被告人行踪。；张某的陈述: 证实被诈骗的经过及损失情况。",
+    "expected": {
+      "evidence_chain_complete": "TODO: true/false",
+      "confidence_min": "TODO",
+      "confidence_max": "TODO",
+      "expected_citations": "TODO: 证据1|证据2|...",
+      "expected_legal_basis": "TODO: 刑法第X条",
+      "should_contain": "TODO",
+      "should_not_contain": "TODO"
+    }
+  },
+  {
+    "case_id": "cail-labeled-008",
+    "case_name": "(0008)陈某侵犯公民个人信息罪案（侵犯公民个人信息罪）",
+    "query": "该案证据链是否完整？能否认定侵犯公民个人信息罪？",
+    "case_context": "2020年6月7日，被告人黄某在成都市武侯区，通过微信群发等方式，非法获取公民个人信息共计109633条，并非法出售给他人，获利人民币192万元。\n\n证据材料：受案登记表、立案决定书: 证实案件来源及立案侦查经过。；户籍证明: 证实被告人的身份信息及刑事责任年龄。；周某的证言: 证实案发经过。；何某的证言: 证实被告人行踪。；王某的陈述: 证实被伤害的经过及损失情况。",
+    "expected": {
+      "evidence_chain_complete": "TODO: true/false",
+      "confidence_min": "TODO",
+      "confidence_max": "TODO",
+      "expected_citations": "TODO: 证据1|证据2|...",
+      "expected_legal_basis": "TODO: 刑法第X条",
+      "should_contain": "TODO",
+      "should_not_contain": "TODO"
+    }
+  },
+  {
+    "case_id": "cail-labeled-009",
+    "case_name": "(0009)李某侵犯公民个人信息罪案（侵犯公民个人信息罪）",
+    "query": "该案证据链是否完整？能否认定侵犯公民个人信息罪？",
+    "case_context": "2022年12月26日，被告人徐某在西安市雁塔区，通过口口相传等方式，非法获取公民个人信息共计382358条，并非法出售给他人，获利人民币296元。\n\n证据材料：受案登记表、立案决定书: 证实案件来源及立案侦查经过。；户籍证明: 证实被告人的身份信息及刑事责任年龄。；赵某的证言: 证实被告人行踪。；电子数据检查笔录: 证实微信聊天记录的提取与固定情况。",
+    "expected": {
+      "evidence_chain_complete": "TODO: true/false",
+      "confidence_min": "TODO",
+      "confidence_max": "TODO",
+      "expected_citations": "TODO: 证据1|证据2|...",
+      "expected_legal_basis": "TODO: 刑法第X条",
+      "should_contain": "TODO",
+      "should_not_contain": "TODO"
+    }
+  },
+  {
+    "case_id": "cail-labeled-010",
+    "case_name": "(0010)王某侵犯公民个人信息罪案（侵犯公民个人信息罪）",
+    "query": "该案证据链是否完整？能否认定侵犯公民个人信息罪？",
+    "case_context": "2023年10月20日，被告人徐某在南京市鼓楼区，通过电话推销等方式，非法获取公民个人信息共计450507条，并非法出售给他人，获利人民币189万元。\n\n证据材料：受案登记表、立案决定书: 证实案件来源及立案侦查经过。；户籍证明: 证实被告人的身份信息及刑事责任年龄。；王某的证言: 证实案发经过。；何某的陈述: 证实被抢劫的经过及损失情况。；讯问笔录: 被告人对犯罪事实的供述与辩解。",
+    "expected": {
+      "evidence_chain_complete": "TODO: true/false",
+      "confidence_min": "TODO",
+      "confidence_max": "TODO",
+      "expected_citations": "TODO: 证据1|证据2|...",
+      "expected_legal_basis": "TODO: 刑法第X条",
+      "should_contain": "TODO",
+      "should_not_contain": "TODO"
+    }
+  }
+]

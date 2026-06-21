@@ -115,7 +115,7 @@ def main():
 
     data_dir = ROOT / "data" / "samples"
     all_cases = load_cail_samples(data_dir)
-    print(f"📂 从 CAIL 加载 {len(all_cases)} 条样本")
+    print(f" 从 CAIL 加载 {len(all_cases)} 条样本")
 
     examples = []
     skipped = 0
@@ -129,7 +129,7 @@ def main():
             break
 
     if skipped:
-        print(f"⏭ 跳过 {skipped} 条（空内容）")
+        print(f"[SKIP] 跳过 {skipped} 条（空内容）")
 
     client = Client()
     dataset = client.create_dataset(
@@ -143,10 +143,10 @@ def main():
     for i in range(0, len(examples), batch_size):
         batch = examples[i:i + batch_size]
         client.create_examples(dataset_id=dataset.id, examples=batch)
-        print(f"  📤 已上传 {min(i + batch_size, len(examples))}/{len(examples)}")
+        print(f"   已上传 {min(i + batch_size, len(examples))}/{len(examples)}")
 
-    print(f"\n✅ 完成: {len(examples)} 条")
-    print(f"🔗 https://smith.langchain.com/datasets/{dataset.id}")
+    print(f"\n 完成: {len(examples)} 条")
+    print(f" https://smith.langchain.com/datasets/{dataset.id}")
     print(f"\n运行评测:")
     print(f"  python eval/langsmith_eval.py --dataset '{args.dataset}' --experiment deepseek-v4-cail100")
 

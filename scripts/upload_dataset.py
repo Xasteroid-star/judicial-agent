@@ -63,5 +63,5 @@ for c in cases:
     })
 
 client.create_examples(dataset_id=dataset.id, examples=examples)
-print(f"✅ 已上传 {len(examples)} 条用例")
-print(f"🔗 Dataset: https://smith.langchain.com/datasets/{dataset.id}")
+print(f" 已上传 {len(examples)} 条用例")
+print(f" Dataset: https://smith.langchain.com/datasets/{dataset.id}")
