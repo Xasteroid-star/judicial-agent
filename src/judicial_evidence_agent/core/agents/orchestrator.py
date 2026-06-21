@@ -9,6 +9,8 @@ architecture.md §7 定义的 8 个 Agent 按以下顺序执行：
                                                 报告生成
                                                      ↓
                                                 人工复核
+
+所有 Agent 调用通过 LangSmith @traceable 上报 tracing。
 """
 
 from __future__ import annotations
@@ -16,6 +18,11 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from typing import Optional
+
+# load_dotenv() 必须先于 langsmith import，确保 LANGCHAIN_* 环境变量就绪
+from judicial_evidence_agent.core.config import settings  # noqa: F401
+
+from langsmith import traceable
 
 from judicial_evidence_agent.core.agents.base import AgentContext
 from judicial_evidence_agent.core.agents.docket_parser import DocketParserAgent
@@ -49,15 +56,16 @@ class AgentPipeline:
 
         self._agents = [
             DocketParserAgent(),
-            ElementExtractorAgent(),
+            ElementExtractorAgent(llm_client=llm),
             RAGRetrieverAgent(),
-            KnowledgeGraphAgent(),
+            KnowledgeGraphAgent(llm_client=llm),
             EvidenceChainAgent(llm_client=llm),
             ConfidenceReviewerAgent(),
             ReportGeneratorAgent(llm_client=llm),
             HumanReviewAgent(),
         ]
 
+    @traceable(run_type="chain", name="AgentPipeline.run")
     async def run(
         self,
         case_id: str = "",

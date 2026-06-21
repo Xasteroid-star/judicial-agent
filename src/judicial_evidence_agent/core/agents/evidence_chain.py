@@ -124,18 +124,46 @@ class EvidenceChainAgent(BaseAgent):
         if not self.llm:
             return None
 
-        prompt = f"""请分析以下案件材料：
+        # 构建 RAG 检索到的法条上下文
+        statutes_text = ""
+        if ctx.retrieved_statutes:
+            statutes_lines = []
+            for s in ctx.retrieved_statutes[:5]:
+                name = s.get("law_name", "") or s.get("name", "")
+                content = s.get("content", "")[:400]
+                date = s.get("effective_date", "") or s.get("date", "")
+                statutes_lines.append(f"- {name} ({date}): {content}")
+            statutes_text = "\n".join(statutes_lines)
 
-案件描述：{ctx.case_context}
-评估问题：{ctx.query}
+        # 构建检索到的证据 chunk 上下文
+        chunks_text = ""
+        if ctx.retrieved_chunks:
+            chunks_lines = []
+            for c in ctx.retrieved_chunks[:5]:
+                etype = c.get("evidence_type", "证据")
+                content = c.get("content_preview", "") or c.get("content", "")
+                chunks_lines.append(f"- [{etype}] {content[:200]}")
+            chunks_text = "\n".join(chunks_lines)
 
-分析要求：
-1. 从描述中识别所有证据类型（法定 8 类）
-2. 判断证据链是否完整
-3. 列出缺失的关键证据（如有）
-4. 给出置信度评分
+        # 构建案件描述
+        case_text = ctx.case_context or ctx.query or ""
 
-请仅返回 JSON："""
+        statutes_block = "相关法条：\n" + statutes_text if statutes_text else "（无检索到的法条）"
+        chunks_block = "案件证据片段：\n" + chunks_text if chunks_text else "（无检索到的证据片段）"
+
+        prompt = (
+            "请分析以下案件材料：\n\n"
+            f"案件描述：{case_text}\n"
+            f"评估问题：{ctx.query}\n\n"
+            f"{statutes_block}\n\n"
+            f"{chunks_block}\n\n"
+            "分析要求：\n"
+            "1. 从描述和法条中识别所有证据类型（法定 8 类）\n"
+            "2. 结合检索到的法条判断证据链是否完整\n"
+            "3. 列出缺失的关键证据（如有）\n"
+            "4. 给出置信度评分\n\n"
+            "请仅返回 JSON："
+        )
 
         try:
             raw = await self.llm.generate(

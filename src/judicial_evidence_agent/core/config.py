@@ -1,5 +1,15 @@
 """Application configuration — 从环境变量加载。"""
 
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# 加载 .env 中的所有变量（包括无 JEA_ 前缀的如 LANGCHAIN_*）
+# 从项目根目录加载（config.py 在 src/judicial_evidence_agent/core/ 下 → 上溯 4 层）
+_env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+load_dotenv(_env_path)
+del _env_path
+
 from pydantic_settings import BaseSettings
 
 

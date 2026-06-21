@@ -1,8 +1,7 @@
 /** 案件详情 — 从 API 动态加载 */
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { EvidenceGraph } from "../components/EvidenceGraph";
-import { ConfidencePanel } from "../components/ConfidencePanel";
+// EvidenceGraph and ConfidencePanel available for future use
 
 interface CaseData {
   case_id: string;

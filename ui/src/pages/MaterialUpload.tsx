@@ -1,10 +1,6 @@
 /** 卷宗接入模块 — architecture.md §5.1 */
 import { useState } from "react";
 
-const MATERIAL_TYPES = [
-  "文本文书", "扫描件", "图片", "视频", "音频", "表格", "聊天记录", "电子数据检查材料",
-];
-
 interface UploadedMaterial {
   id: string;
   name: string;

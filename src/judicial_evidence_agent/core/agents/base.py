@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+# load_dotenv() 必须先于 langsmith import，确保 LANGCHAIN_* 环境变量就绪
+from judicial_evidence_agent.core.config import settings  # noqa: F401
+
+from langsmith import traceable
+
 
 @dataclass
 class AgentContext:

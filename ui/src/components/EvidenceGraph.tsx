@@ -76,13 +76,7 @@ export function EvidenceGraph({ nodes, edges }: Props) {
       ],
       layout: {
         name: "dagre",
-        rankDir: "TB",
-        spacingFactor: 1.5,
-        nodeSep: 60,
-        edgeSep: 20,
-        rankSep: 80,
-        fit: true,
-      },
+      } as any,
       wheelSensitivity: 0.3,
     });
 

@@ -1,7 +1,14 @@
 """FastAPI 应用入口 — 完整 API 层（对照 architecture.md §4 应用后端）。"""
 
+from pathlib import Path
+
+# load_dotenv() 必须先于 langsmith import，确保 LANGCHAIN_* 环境变量就绪
+from judicial_evidence_agent.core.config import settings  # noqa: F401
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from langsmith import traceable
 from pydantic import BaseModel
 
 app = FastAPI(
@@ -50,6 +57,15 @@ class ReviewAction(BaseModel):
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": "0.1.0"}
+
+
+@app.get("/api/debug/langsmith")
+async def debug_langsmith():
+    import os
+    return {
+        "LANGCHAIN_TRACING_V2": os.environ.get("LANGCHAIN_TRACING_V2", "NOT SET"),
+        "LANGCHAIN_PROJECT": os.environ.get("LANGCHAIN_PROJECT", "NOT SET"),
+    }
 
 
 # ============================================================================
@@ -173,30 +189,62 @@ async def list_chunks(case_id: str = ""):
 # ============================================================================
 
 @app.get("/api/graph")
-async def get_graph(case_id: str = ""):
-    """知识图谱数据。"""
+@traceable(run_type="chain", name="API.get_graph")
+async def get_graph(case_id: str = "", query: str = "", case_context: str = ""):
+    """知识图谱数据 — 使用 LLM 驱动的 Agent 动态生成。"""
+    from judicial_evidence_agent.core.agents.base import AgentContext
+    from judicial_evidence_agent.core.agents.element_extractor import ElementExtractorAgent
+    from judicial_evidence_agent.core.agents.knowledge_graph import KnowledgeGraphAgent
+    from judicial_evidence_agent.core.llm import LLMClient
+
+    ctx = AgentContext(
+        case_id=case_id or "graph-req",
+        query=query or "证据链图谱分析",
+        case_context=case_context or "",
+    )
+
+    # 如果有 case_id，从数据库加载
+    if case_id and case_context == "":
+        import sqlite3, json
+        conn = sqlite3.connect("data/judicial_evidence.db")
+        row = conn.execute(
+            "SELECT case_name, description FROM cases WHERE case_id=?",
+            (case_id,)
+        ).fetchone()
+        if row:
+            ctx.case_name = row[0] or ""
+            ctx.case_context = row[1] or ""
+        # 加载证据 chunks
+        chunk_rows = conn.execute(
+            "SELECT content_text, extracted_elements FROM evidence_chunks WHERE case_id=? LIMIT 10",
+            (case_id,)
+        ).fetchall()
+        for cr in chunk_rows:
+            try:
+                elems = json.loads(cr[1]) if cr[1] else {}
+            except Exception:
+                elems = {}
+            ctx.retrieved_chunks.append({
+                "chunk_id": f"db-{len(ctx.retrieved_chunks)}",
+                "content": cr[0] or "",
+                "evidence_type": elems.get("evidence_type", ""),
+                "distance": 0.1,
+            })
+        conn.close()
+
+    llm = LLMClient()
+
+    # 先提取要素
+    extractor = ElementExtractorAgent(llm_client=llm)
+    ctx = await extractor.run(ctx)
+
+    # 再构建图谱
+    graph_builder = KnowledgeGraphAgent(llm_client=llm)
+    ctx = await graph_builder.run(ctx)
+
     return {
-        "nodes": [
-            {"id": "le1", "label": "故意伤害罪(刑法234条)", "type": "LegalElement"},
-            {"id": "f1", "label": "李某轻伤二级", "type": "Fact"},
-            {"id": "f2", "label": "王某持木棍殴打", "type": "Fact"},
-            {"id": "e1", "label": "司法鉴定意见书", "type": "Evidence"},
-            {"id": "e2", "label": "证人张某证言", "type": "Evidence"},
-            {"id": "e3", "label": "物证:木棍", "type": "Evidence"},
-            {"id": "e4", "label": "现场勘查笔录", "type": "Evidence"},
-            {"id": "p1", "label": "王某", "type": "Person"},
-            {"id": "p2", "label": "李某", "type": "Person"},
-            {"id": "r1", "label": "刑讯逼供主张", "type": "Risk"},
-        ],
-        "edges": [
-            {"from": "le1", "to": "f1", "relation": "法律要件", "confidence": 1.0},
-            {"from": "le1", "to": "f2", "relation": "法律要件", "confidence": 1.0},
-            {"from": "e1", "to": "f1", "relation": "证明", "confidence": 0.85},
-            {"from": "e2", "to": "f2", "relation": "证明", "confidence": 0.72},
-            {"from": "e3", "to": "f2", "relation": "补强", "confidence": 0.78},
-            {"from": "e4", "to": "f2", "relation": "补强", "confidence": 0.80},
-            {"from": "r1", "to": "e2", "relation": "冲突", "confidence": 0.45},
-        ],
+        "nodes": ctx.graph_nodes,
+        "edges": ctx.graph_edges,
     }
 
 
@@ -205,6 +253,7 @@ async def get_graph(case_id: str = ""):
 # ============================================================================
 
 @app.post("/api/analyze")
+@traceable(run_type="chain", name="API.analyze")
 async def analyze(req: AnalyzeRequest):
     """证据链分析：8-Agent 流水线。"""
     from judicial_evidence_agent.core.agents.orchestrator import AgentPipeline
@@ -426,3 +475,13 @@ async def submit_review(review_id: str, req: ReviewAction):
     conn.commit()
     conn.close()
     return {"review_id": review_id, "action": req.action, "status": new_status}
+
+
+# ============================================================================
+# 前端静态文件 (SPA)
+# ============================================================================
+
+FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent.parent / "ui" / "dist"
+
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")

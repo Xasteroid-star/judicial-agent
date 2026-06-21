@@ -121,16 +121,18 @@ class ReportGeneratorAgent(BaseAgent):
         lines = []
         for ch in ctx.evidence_chains:
             for ev in ch.get("supporting_evidence", []):
+                chunk_id = ev.get("chunk_id", "")
+                if chunk_id.startswith("parsed-"):
+                    continue  # 跳过关键词提取的假条目
                 lines.append(
                     f"  - [{ev.get('type', '证据')}] "
                     f"{ev.get('content', '')[:100]} "
-                    f"(来源: {ev.get('chunk_id', '?')[:20]})"
+                    f"(来源: {chunk_id[:20]})"
                 )
-        # 解析出的要素
-        for e in ctx.extracted_elements:
-            if e["category"] == "证据名称":
-                lines.append(f"  - [{e['category']}] {e['value']} (置信度: {e['confidence']:.2f})")
-        return "\n".join(lines) if lines else "（无证据材料）"
+        if not lines:
+            # 没有真实证据时，直接从 case_context 提取
+            lines.append(f"  案件描述: {(ctx.case_context or '')[:300]}")
+        return "\n".join(lines) if lines else "（待补充证据材料）"
 
     @staticmethod
     def _build_chain_summary(ctx: AgentContext) -> str:

@@ -2,13 +2,18 @@
 
 参考 Patchwork-Assurance 模式：一个瘦接口包装 Anthropic SDK，
 内置防幻觉 guardrails，所有调用自动注入安全规则。
+
+所有 LLM 调用通过 LangSmith @traceable 自动上报 tracing。
 """
 
 from __future__ import annotations
 
-from anthropic import Anthropic
+# load_dotenv() 必须先于 langsmith import，确保 LANGCHAIN_* 环境变量就绪
+from judicial_evidence_agent.core.config import settings  # noqa: F401 — triggers load_dotenv()
 
-from judicial_evidence_agent.core.config import settings
+from anthropic import Anthropic
+from langsmith import traceable
+
 from judicial_evidence_agent.core.guardrails import (
     ANTI_HALLUCINATION_SYSTEM_PROMPT,
     ATTENTION_FORCE_PROMPT,
@@ -39,6 +44,7 @@ class LLMClient:
         self._call_history: list[str] = []  # 循环检测
         self._retry_count = 0
 
+    @traceable(run_type="llm", name="LLM.generate")
     async def generate(
         self,
         prompt: str,
@@ -57,21 +63,26 @@ class LLMClient:
             "max_tokens": max_tokens,
             "temperature": temperature,
             "messages": [{"role": "user", "content": prompt}],
+            "thinking": {"type": "disabled"},  # DeepSeek: 禁用思考模式，直接输出
         }
         kwargs["system"] = full_system
 
         response = self._client.messages.create(**kwargs)
         # 兼容 DeepSeek thinking blocks + 标准 Anthropic text blocks
+        # DeepSeek 返回格式: [ThinkingBlock, TextBlock] 或单独 TextBlock
         text = ""
         for block in response.content:
-            if hasattr(block, "text") and block.text:
-                text = block.text
-                break
-            if hasattr(block, "type") and block.type == "text":
-                text = block.text
-                break
-        if not text:
-            text = str(response.content[0]) if response.content else ""
+            block_type = getattr(block, "type", "")
+            if block_type == "text":
+                text = getattr(block, "text", "") or ""
+            elif block_type == "thinking":
+                # DeepSeek thinking block，取 thinking 内容作为 fallback
+                if not text:
+                    text = getattr(block, "thinking", "") or ""
+        if not text and response.content:
+            # 最后的 fallback
+            last = response.content[-1]
+            text = getattr(last, "text", "") or getattr(last, "thinking", "") or str(last)
 
         # 循环检测
         if OutputValidator.check_loop(text, self._call_history):
@@ -89,6 +100,7 @@ class LLMClient:
 
         return text
 
+    @traceable(run_type="llm", name="LLM.generate_with_citations")
     async def generate_with_citations(
         self,
         prompt: str,

@@ -11,6 +11,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "judicial_evidence_agent.api.main:app",
         host="127.0.0.1",
-        port=9090,
-        reload=True,
+        port=9091,
+        reload=False,  # Windows 下 reload 有兼容问题，手动重启
     )
