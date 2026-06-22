@@ -2,19 +2,36 @@
 
 面向公检法场景的证据材料接入、解析、图谱构建与可溯源报告生成。
 
+## 环境配置
+
+复制 `.env.example` 为 `.env`，填入你的 API Key：
+
+```bash
+cp .env.example .env
+```
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `JEA_ANTHROPIC_API_KEY` | ⚡ 必填 | DeepSeek API Key（[获取](https://platform.deepseek.com/api_keys)） |
+| `JEA_ANTHROPIC_BASE_URL` | 默认即可 | DeepSeek Anthropic 协议端点 |
+| `JEA_ANTHROPIC_MODEL` | 默认即可 | 模型名，当前 `deepseek-v4-pro[1m]` |
+| `HF_ENDPOINT` | 国内建议 | HuggingFace 镜像（`https://hf-mirror.com`），用于下载 BGE 模型 |
+| `LANGCHAIN_API_KEY` | 可选 | LangSmith API Key，不填则不上报 trace |
+| `LANGCHAIN_TRACING_V2` | 可选 | 是否启用 LangSmith 追踪 |
+
 ## 快速启动
 
 ```bash
-# 安装依赖
+# 1. 安装依赖
 pip install -e .
 
-# 构建向量索引（首次运行）
+# 2. 构建向量索引（首次运行，下载 BGE 中文模型 + 编码法条/案例）
 python scripts/build_vector_index.py
 
-# 一键启动（前端 + 后端）
+# 3. 一键启动（前端 + 后端）
 start.bat
 
-# 浏览器打开
+# 4. 浏览器打开
 # http://localhost:5173
 ```
 
