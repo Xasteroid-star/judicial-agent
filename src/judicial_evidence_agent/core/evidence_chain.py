@@ -45,17 +45,34 @@ class EvidenceChainAnalyzer:
         report = await analyzer.analyze("案卷材料中银行转账记录显示...")
     """
 
+    # BGE 中文模型全局单例 — 首次加载后缓存，避免每次请求重新加载
+    _model_cache = None
+    _index_cache = None
+    _metadata_cache = None
+
     def __init__(self, use_stub: bool = False):
         from judicial_evidence_agent.core.config import settings
 
-        self._model = SentenceTransformer("BAAI/bge-small-zh-v1.5", device="cpu")
-        self._index_dir = Path(__file__).resolve().parent.parent.parent.parent / "data" / "bge_index"
-        if self._index_dir.exists():
-            self._embeddings = np.load(str(self._index_dir / "embeddings.npy"))
-            self._metadata = json.loads((self._index_dir / "metadata.json").read_text("utf-8"))
-        else:
-            self._embeddings = None
-            self._metadata = []
+        # 全局缓存：BGE 模型只加载一次
+        if EvidenceChainAnalyzer._model_cache is None:
+            import os
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")  # 跳过网络检查，直接用本地缓存
+            EvidenceChainAnalyzer._model_cache = SentenceTransformer(
+                "BAAI/bge-small-zh-v1.5", device="cpu", local_files_only=True
+            )
+            self._index_dir = Path(__file__).resolve().parent.parent.parent.parent / "data" / "bge_index"
+            if self._index_dir.exists():
+                EvidenceChainAnalyzer._index_cache = np.load(str(self._index_dir / "embeddings.npy"))
+                EvidenceChainAnalyzer._metadata_cache = json.loads(
+                    (self._index_dir / "metadata.json").read_text("utf-8")
+                )
+            else:
+                EvidenceChainAnalyzer._index_cache = None
+                EvidenceChainAnalyzer._metadata_cache = []
+
+        self._model = EvidenceChainAnalyzer._model_cache
+        self._embeddings = EvidenceChainAnalyzer._index_cache
+        self._metadata = EvidenceChainAnalyzer._metadata_cache
 
         # LLM
         if use_stub:
@@ -65,10 +82,22 @@ class EvidenceChainAnalyzer:
 
             self._llm = LLMClient(model=settings.anthropic_model)
 
-    def retrieve(self, query: str, top_k: int = 10, case_id: str = "") -> list[dict]:
-        """混合检索：BGE 中文向量 + 关键词。"""
+    def retrieve(
+        self,
+        query: str,
+        top_k: int = 10,
+        case_id: str = "",
+        exclude_ids=None,
+    ) -> list[dict]:
+        """混合检索：BGE 中文向量 + 关键词。
+
+        Args:
+            exclude_ids: 排除已见过的 chunk_id 列表（人工驳回重检索时使用）。
+        """
         if self._embeddings is None:
             return []
+
+        exclude_set = set(exclude_ids or [])
 
         # ── 向量检索 ──
         q_emb = self._model.encode([query], show_progress_bar=False)[0]
@@ -81,6 +110,8 @@ class EvidenceChainAnalyzer:
         all_hits = []
         for idx in top_indices:
             meta = self._metadata[idx]
+            if meta["chunk_id"] in exclude_set:
+                continue
             if not case_id or meta.get("effective_date") or meta.get("case_id") == case_id:
                 all_hits.append({
                     **meta,
@@ -92,7 +123,7 @@ class EvidenceChainAnalyzer:
         crime_match = re.findall(r"(?:犯? |构成)?([一-鿿]{2,6})(?:罪)", query)
         keywords = [f"{c}罪" for c in crime_match] + keywords
 
-        seen_ids = {h["chunk_id"] for h in all_hits}
+        seen_ids = {h["chunk_id"] for h in all_hits} | exclude_set
         for kw in keywords[:5]:
             for meta in self._metadata:
                 if meta["chunk_id"] in seen_ids:

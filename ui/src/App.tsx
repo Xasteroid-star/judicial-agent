@@ -22,6 +22,7 @@ export default function App() {
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/review" element={<HumanReview />} />
             <Route path="/report" element={<ReportView />} />
+            <Route path="/report/:reportId" element={<ReportView />} />
           </Routes>
         </main>
       </div>

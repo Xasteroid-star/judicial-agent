@@ -15,6 +15,7 @@ architecture.md §7 定义的 8 个 Agent 按以下顺序执行：
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import asdict
 from typing import Optional
@@ -36,7 +37,11 @@ from judicial_evidence_agent.core.agents.human_review import HumanReviewAgent
 
 
 class AgentPipeline:
-    """证据链分析流水线 — 8 个 Agent 按顺序执行。
+    """证据链分析流水线 — 8 个 Agent，其中要素抽取 + RAG 检索并行执行。
+
+    执行顺序:
+      卷宗解析 ──┬── 要素抽取 ──┬── 知识图谱 ── 证据链分析 ── 置信度审查 ── 报告生成 ── 人工复核
+                 └── RAG 检索 ──┘
 
     用法:
         pipeline = AgentPipeline()
@@ -54,16 +59,14 @@ class AgentPipeline:
         self._stub = stub_llm
         llm = StubLLM() if stub_llm else LLMClient()
 
-        self._agents = [
-            DocketParserAgent(),
-            ElementExtractorAgent(llm_client=llm),
-            RAGRetrieverAgent(),
-            KnowledgeGraphAgent(llm_client=llm),
-            EvidenceChainAgent(llm_client=llm),
-            ConfidenceReviewerAgent(),
-            ReportGeneratorAgent(llm_client=llm),
-            HumanReviewAgent(),
-        ]
+        self._docket_parser = DocketParserAgent()
+        self._element_extractor = ElementExtractorAgent(llm_client=llm)
+        self._rag_retriever = RAGRetrieverAgent()
+        self._knowledge_graph = KnowledgeGraphAgent(llm_client=llm)
+        self._evidence_chain = EvidenceChainAgent(llm_client=llm)
+        self._confidence_reviewer = ConfidenceReviewerAgent()
+        self._report_generator = ReportGeneratorAgent(llm_client=llm)
+        self._human_review = HumanReviewAgent()
 
     @traceable(run_type="chain", name="AgentPipeline.run")
     async def run(
@@ -73,7 +76,7 @@ class AgentPipeline:
         query: str = "",
         case_context: str = "",
     ) -> dict:
-        """执行完整流水线，返回结构化结果（含防循环守卫）。"""
+        """执行流水线：卷宗解析后，要素抽取和 RAG 检索并行。"""
         from judicial_evidence_agent.core.guardrails import MAX_RETRY_COUNT
 
         ctx = AgentContext(
@@ -86,19 +89,44 @@ class AgentPipeline:
         prev_ctx_hash = None
         stall_count = 0
 
-        for agent in self._agents:
-            # 循环守卫：如果连续执行同一 agent 不改变上下文，可能死循环
-            ctx = await agent.run(ctx)
-
-            # 检查上下文是否停滞
+        def _check_stall():
+            nonlocal prev_ctx_hash, stall_count
             current_hash = hash(str(ctx.extracted_elements) + str(ctx.evidence_chains))
             if current_hash == prev_ctx_hash:
                 stall_count += 1
-                if stall_count >= MAX_RETRY_COUNT:
-                    break  # 跳出死循环
             else:
                 stall_count = 0
             prev_ctx_hash = current_hash
+            return stall_count >= MAX_RETRY_COUNT
+
+        # Phase 1: 卷宗解析（必须先完成）
+        ctx = await self._docket_parser.run(ctx)
+        if _check_stall():
+            return self._serialize(ctx)
+
+        # Phase 2: 要素抽取 + RAG 检索并行（互不依赖）
+        ctx_element, ctx_rag = await asyncio.gather(
+            self._element_extractor.run(ctx),
+            self._rag_retriever.run(ctx),
+        )
+        # 合并：要素结果来自 element_extractor，检索结果来自 rag_retriever
+        ctx.extracted_elements = ctx_element.extracted_elements
+        ctx.retrieved_statutes = ctx_rag.retrieved_statutes
+        ctx.retrieved_chunks = ctx_rag.retrieved_chunks
+        if _check_stall():
+            return self._serialize(ctx)
+
+        # Phase 3-8: 串行（后续 Agent 依赖前面全部产出）
+        for agent in [
+            self._knowledge_graph,
+            self._evidence_chain,
+            self._confidence_reviewer,
+            self._report_generator,
+            self._human_review,
+        ]:
+            ctx = await agent.run(ctx)
+            if _check_stall():
+                break
 
         return self._serialize(ctx)
 

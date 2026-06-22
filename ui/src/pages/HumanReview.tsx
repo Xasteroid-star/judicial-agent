@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 interface ReviewItem {
   id: string;
-  type: "evidence" | "edge" | "element" | "report";
+  type: "evidence" | "edge" | "element" | "report" | "annotation";
   title: string;
   detail: string;
   confidence: number;
@@ -11,6 +11,7 @@ interface ReviewItem {
   reviewer?: string;
   review_time?: string;
   note?: string;
+  retry_count?: number;
 }
 
 const MOCK_REVIEWS: ReviewItem[] = [
@@ -52,6 +53,12 @@ export function HumanReview() {
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [selected, setSelected] = useState<ReviewItem | null>(null);
   const [feedback, setFeedback] = useState("");
+  const [retryResult, setRetryResult] = useState<any>(null);
+
+  // 驳回意见框
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectNote, setRejectNote] = useState("");
+  const [rejecting, setRejecting] = useState(false);
 
   useEffect(() => {
     fetch("/api/reviews")
@@ -61,23 +68,82 @@ export function HumanReview() {
   }, []);
 
   const handleConfirm = async (id: string) => {
-    setReviews((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: "confirmed" as const, reviewer: "审查员", review_time: new Date().toLocaleString() } : r))
-    );
-    setFeedback(`已确认 ${id}`);
-    setTimeout(() => setFeedback(""), 3000);
-    try { await fetch(`/api/reviews/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ review_id: id, action: "confirm", note: "" }) }); } catch {}
+    try {
+      const res = await fetch(`/api/reviews/${id}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ review_id: id, action: "confirm", note: "" }),
+      });
+      if (res.ok) {
+        setReviews((prev) =>
+          prev.map((r) => (r.id === id ? { ...r, status: "confirmed" as const, reviewer: "审查员", review_time: new Date().toLocaleString() } : r))
+        );
+        setFeedback("已确认");
+      } else {
+        setFeedback(`确认失败: ${res.status}`);
+      }
+    } catch (e: any) {
+      setFeedback(`请求失败: ${e.message}`);
+    }
+    setTimeout(() => setFeedback(""), 5000);
   };
 
-  const handleReject = async (id: string) => {
-    const note = prompt("驳回理由：") || "";
-    if (note === null) return;
-    setReviews((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: "rejected" as const, reviewer: "审查员", review_time: new Date().toLocaleString(), note } : r))
-    );
-    setFeedback(`已驳回 ${id}`);
-    setTimeout(() => setFeedback(""), 3000);
-    try { await fetch(`/api/reviews/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ review_id: id, action: "reject", note }) }); } catch {}
+  const handleReject = async () => {
+    if (!selected) return;
+    if (!rejectNote || rejectNote.trim().length < 5) {
+      setFeedback("驳回需要写明补证方向（至少5字）");
+      setTimeout(() => setFeedback(""), 4000);
+      return;
+    }
+    setRejecting(true);
+    setShowRejectDialog(false);
+    try {
+      const res = await fetch(`/api/reviews/${selected.id}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ review_id: selected.id, action: "驳回", note: rejectNote.trim() }),
+      });
+      const data = await res.json();
+      setRejecting(false);
+
+      if (!res.ok) {
+        setFeedback(`驳回失败: ${res.status} ${data.detail || ""}`);
+        setTimeout(() => setFeedback(""), 5000);
+        return;
+      }
+
+      // 处理重检索结果
+      if (data.status === "retrying" || data.status === "confirmed" || data.status === "needs_supplement") {
+        setRetryResult(data);
+        setFeedback(data.message || `重检索完成，置信度 ${data.new_confidence ? Math.round(data.new_confidence * 100) + "%" : "N/A"}`);
+        setTimeout(() => setFeedback(""), 8000);
+
+        // 更新本地状态
+        setReviews((prev) =>
+          prev.map((r) =>
+            r.id === selected.id
+              ? {
+                  ...r,
+                  status: data.status === "confirmed" ? "confirmed" : data.status === "needs_supplement" ? "rejected" : "rejected",
+                  reviewer: "审查员",
+                  review_time: new Date().toLocaleString(),
+                  note: rejectNote.trim(),
+                  confidence: data.new_confidence ?? r.confidence,
+                }
+              : r
+          )
+        );
+      } else {
+        // 直接驳回（原因太短等）
+        setReviews((prev) =>
+          prev.map((r) => (r.id === selected.id ? { ...r, status: "rejected" as const, reviewer: "审查员", review_time: new Date().toLocaleString(), note: rejectNote.trim() } : r))
+        );
+        setFeedback(data.warning || "已驳回");
+        setTimeout(() => setFeedback(""), 3000);
+      }
+    } catch (e: any) {
+      setRejecting(false);
+      setFeedback(`请求失败: ${e.message}。请确认后端服务已启动。`);
+      setTimeout(() => setFeedback(""), 5000);
+    }
   };
 
   const statusBadge = (s: string) => {
@@ -188,6 +254,34 @@ export function HumanReview() {
                 </div>
               )}
 
+              {/* 重检索结果 */}
+              {retryResult && retryResult.new_evidence && retryResult.new_evidence.length > 0 && (
+                <div className="bg-blue-50 rounded-lg p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-blue-700">
+                      重检索结果（第{retryResult.retry_round}轮）
+                    </h4>
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      (retryResult.new_confidence ?? 0) >= 0.85 ? "bg-green-100 text-green-700" :
+                      (retryResult.new_confidence ?? 0) >= 0.70 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"
+                    }`}>
+                      置信度 {Math.round((retryResult.new_confidence ?? 0) * 100)}%
+                    </span>
+                  </div>
+                  {retryResult.message && (
+                    <p className="text-xs text-blue-600">{retryResult.message}</p>
+                  )}
+                  <div className="space-y-1 max-h-[300px] overflow-auto">
+                    {retryResult.new_evidence.map((ev: any, i: number) => (
+                      <div key={i} className="bg-white rounded p-2 text-xs">
+                        <span className="text-gray-400">[{ev.source_type}]</span>{" "}
+                        <span className="text-gray-600">{ev.content_preview?.slice(0, 120)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {selected.status === "pending" && (
                 <div className="flex gap-3 pt-4 border-t">
                   <button
@@ -197,7 +291,7 @@ export function HumanReview() {
                     确认通过
                   </button>
                   <button
-                    onClick={() => handleReject(selected.id)}
+                    onClick={() => { setShowRejectDialog(true); setRejectNote(""); setRetryResult(null); }}
                     className="flex-1 py-2 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors"
                   >
                     驳回
@@ -212,6 +306,72 @@ export function HumanReview() {
           )}
         </div>
       </div>
+
+      {/* 驳回意见对话框 */}
+      {showRejectDialog && selected && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowRejectDialog(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800">驳回 — 专家复核意见</h3>
+              <button onClick={() => setShowRejectDialog(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
+              <p className="font-medium text-gray-700 mb-1">{selected.title}</p>
+              <p className="text-xs">当前置信度: {Math.round(selected.confidence * 100)}%</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                驳回理由 <span className="text-red-500">*</span>
+                <span className="text-gray-400 font-normal ml-2">（至少5字，写明需要补充的证据方向）</span>
+              </label>
+              <textarea
+                autoFocus
+                rows={4}
+                value={rejectNote}
+                onChange={e => setRejectNote(e.target.value)}
+                placeholder="例如：缺少关键证人证言，需补充被害人陈述及银行流水记录；或：鉴定意见依据不足，需重新委托司法鉴定…"
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-red-200 focus:border-red-400 outline-none resize-none"
+              />
+              <div className="flex justify-between mt-1">
+                <span className={`text-xs ${rejectNote.trim().length < 5 ? "text-red-400" : "text-green-500"}`}>
+                  已输入 {rejectNote.trim().length} 字{rejectNote.trim().length < 5 ? "（至少5字）" : ""}
+                </span>
+                {(selected.retry_count ?? 0) > 0 && (
+                  <span className="text-xs text-yellow-600">已驳回 {selected.retry_count} 次，最多3次</span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowRejectDialog(false)}
+                className="flex-1 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={rejecting || rejectNote.trim().length < 5}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed transition-colors"
+              >
+                {rejecting ? "驳回中..." : "确认驳回"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 加载状态 */}
+      {rejecting && (
+        <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 shadow-lg text-center">
+            <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-3" />
+            <p className="text-sm text-gray-600">正在检索补充证据...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

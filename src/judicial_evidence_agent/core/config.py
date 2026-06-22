@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     anthropic_model: str = "deepseek-v4-pro[1m]"
 
     # Embedding
-    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_model: str = "BAAI/bge-small-zh-v1.5"
 
     # MinIO
     minio_endpoint: str = "localhost:9000"

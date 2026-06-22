@@ -15,8 +15,11 @@ export function Analysis() {
   const [selectedCase, setSelectedCase] = useState<CaseOption | null>(null);
   const [query, setQuery] = useState("");
   const [caseContext, setCaseContext] = useState("");
+  const [mode, setMode] = useState<"fast" | "llm">("fast");
   const [loading, setLoading] = useState(false);
+  const [elapsed, setElapsed] = useState<number>(0);
   const [result, setResult] = useState<string | null>(null);
+  const [confidence, setConfidence] = useState<any>(null);
   const [chunks, setChunks] = useState<any[]>([]);
   const [localEvidence, setLocalEvidence] = useState<any[]>([]);
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
@@ -62,6 +65,8 @@ export function Analysis() {
     if (!query.trim()) return;
     setLoading(true);
     setResult(null);
+    setConfidence(null);
+    const t0 = performance.now();
 
     try {
       const res = await fetch("/api/analyze", {
@@ -71,10 +76,13 @@ export function Analysis() {
           case_id: selectedCase?.case_id || "",
           query: query,
           case_context: caseContext || query,
+          mode: mode,
         }),
       });
       const data = await res.json();
+      setElapsed(Math.round((performance.now() - t0) / 10) / 100);
       setResult(data.report?.markdown || data.analysis || JSON.stringify(data, null, 2));
+      setConfidence(data.confidence || null);
       // 图谱数据
       if (data.graph?.nodes?.length) {
         setGraphData({ nodes: data.graph.nodes, edges: data.graph.edges || [] });
@@ -124,6 +132,31 @@ export function Analysis() {
             ))}
           </select>
 
+          {/* 模式切换 */}
+          <label className="block text-sm text-gray-500 mb-1">分析模式</label>
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setMode("fast")}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                mode === "fast"
+                  ? "bg-green-600 text-white"
+                  : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+              }`}
+            >
+              ⚡ 快速
+            </button>
+            <button
+              onClick={() => setMode("llm")}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                mode === "llm"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+              }`}
+            >
+              🧠 深度
+            </button>
+          </div>
+
           <label className="block text-sm text-gray-500 mb-1">分析问题</label>
           <textarea
             className="w-full border rounded-lg p-3 text-sm mb-4 h-28 resize-none focus:ring-2 focus:ring-[var(--color-accent)] focus:outline-none"
@@ -144,7 +177,7 @@ export function Analysis() {
             disabled={loading || !query.trim()}
             className="w-full py-2.5 bg-[var(--color-accent)] text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "分析中..." : "开始分析"}
+            {loading ? (mode === "fast" ? "分析中..." : "DeepSeek 深度分析中...") : "开始分析"}
           </button>
         </div>
 
@@ -195,7 +228,29 @@ export function Analysis() {
           {/* LLM 分析报告 */}
           {result && (
             <div className="bg-white rounded-lg border p-4">
-              <h3 className="font-semibold text-gray-700 mb-3">分析报告</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-gray-700">分析报告</h3>
+                <div className="flex items-center gap-3">
+                  {confidence && (
+                    <span className={`text-xs px-2 py-1 rounded font-medium ${
+                      (confidence.final ?? 0) >= 0.85 ? "bg-green-100 text-green-700" :
+                      (confidence.final ?? 0) >= 0.70 ? "bg-yellow-100 text-yellow-700" :
+                      "bg-red-100 text-red-700"
+                    }`}>
+                      置信度 {Math.round((confidence.final ?? 0) * 100)}%
+                      {confidence.threshold_result ? ` · ${confidence.threshold_result === "pass" ? "通过" : confidence.threshold_result === "review" ? "需复核" : confidence.threshold_result === "uncertain" ? "存疑" : "驳回"}` : ""}
+                    </span>
+                  )}
+                  {elapsed > 0 && (
+                    <span className={`text-xs px-2 py-1 rounded ${elapsed < 2 ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-500"}`}>
+                      {elapsed < 2 ? `⚡ ${elapsed}s` : `${elapsed}s`}
+                    </span>
+                  )}
+                  <span className={`text-xs px-2 py-1 rounded ${mode === "fast" ? "bg-green-50 text-green-600" : "bg-blue-50 text-blue-600"}`}>
+                    {mode === "fast" ? "规则引擎" : "DeepSeek"}
+                  </span>
+                </div>
+              </div>
               <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
                 {result}
               </div>

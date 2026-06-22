@@ -33,6 +33,7 @@ class AnalyzeRequest(BaseModel):
     case_id: str = ""
     query: str
     case_context: str = ""
+    mode: str = "llm"  # "llm" = 深度分析（慢）, "fast" = 规则引擎（秒出）
 
 
 class MaterialCreate(BaseModel):
@@ -136,27 +137,45 @@ async def get_case(case_id: str):
 
 @app.get("/api/materials")
 async def list_materials(case_id: str = ""):
-    """卷宗材料列表。"""
+    """卷宗材料列表 — 从数据库加载。"""
+    import sqlite3
+    conn = sqlite3.connect("data/judicial_evidence.db")
+    if case_id:
+        rows = conn.execute(
+            "SELECT material_id, case_id, name, type, source_org, collector, confidentiality_level, file_hash, file_path, processing_status, created_at FROM materials WHERE case_id=? ORDER BY created_at DESC LIMIT 50",
+            (case_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT material_id, case_id, name, type, source_org, collector, confidentiality_level, file_hash, file_path, processing_status, created_at FROM materials ORDER BY created_at DESC LIMIT 50"
+        ).fetchall()
+    conn.close()
+    if not rows:
+        return []
     return [
-        {"material_id": "M-001", "name": "受案登记表.pdf", "type": "文本文书",
-         "source_org": "上海市公安局浦东分局", "collector": "侦查员张某",
-         "confidentiality_level": "medium", "file_hash": "a3f2...8c1d",
-         "processing_status": "completed", "created_at": "2024-08-06T14:30:00"},
-        {"material_id": "M-002", "name": "现场勘查照片.zip", "type": "图片",
-         "source_org": "上海市公安局浦东分局", "collector": "技术科",
-         "confidentiality_level": "medium", "file_hash": "b7e1...4f2a",
-         "processing_status": "completed", "created_at": "2024-08-06T15:00:00"},
-        {"material_id": "M-003", "name": "李某询问笔录.docx", "type": "文本文书",
-         "source_org": "上海市公安局浦东分局", "collector": "侦查员王某",
-         "confidentiality_level": "medium", "file_hash": "c2d4...9a7b",
-         "processing_status": "completed", "created_at": "2024-08-07T09:15:00"},
+        {
+            "material_id": r[0], "case_id": r[1], "name": r[2], "type": r[3],
+            "source_org": r[4] or "", "collector": r[5] or "",
+            "confidentiality_level": r[6] or "medium", "file_hash": r[7] or "",
+            "file_path": r[8] or "", "processing_status": r[9] or "pending",
+            "created_at": r[10] or "",
+        }
+        for r in rows
     ]
 
 
 @app.post("/api/materials")
 async def create_material(req: MaterialCreate):
     """登记新材料。"""
-    return {"material_id": "M-999", "status": "registered", **req.dict()}
+    import sqlite3
+    conn = sqlite3.connect("data/judicial_evidence.db")
+    conn.execute(
+        "INSERT INTO materials (material_id, case_id, name, type, source_org, collector, confidentiality_level) VALUES (?,?,?,?,?,?,?)",
+        (f"M-{hash(req.name) & 0xFFFF:04x}", req.case_id, req.name, req.type, req.source_org, req.collector, req.confidentiality_level),
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "registered", **req.dict()}
 
 
 # ============================================================================
@@ -165,23 +184,38 @@ async def create_material(req: MaterialCreate):
 
 @app.get("/api/evidence-chunks")
 async def list_chunks(case_id: str = ""):
-    """证据片段列表。"""
-    return [
-        {
-            "chunk_id": "CH-001", "modality": "text",
-            "content_text": "2024年8月5日，犯罪嫌疑人王某在上海市浦东新区某小区内，因琐事与被害人李某发生争执，持木棍将李某打伤。",
-            "extracted_elements": {"人物": "王某、李某", "时间": "2024-08-05", "行为": "持木棍殴打"},
-            "source_pointer": {"material_id": "M-003", "page": 2, "paragraph": 3},
-            "confidence": 0.92, "model_version": "v0.1",
-        },
-        {
-            "chunk_id": "CH-002", "modality": "text",
-            "content_text": "经鉴定，被害人李某左前臂骨折，损伤程度为轻伤二级。",
-            "extracted_elements": {"证据名称": "司法鉴定意见书", "证明对象": "损伤程度"},
-            "source_pointer": {"material_id": "M-006", "page": 1, "paragraph": 1},
-            "confidence": 0.95, "model_version": "v0.1",
-        },
-    ]
+    """证据片段列表 — 从数据库加载。"""
+    import sqlite3, json
+    conn = sqlite3.connect("data/judicial_evidence.db")
+    if case_id:
+        rows = conn.execute(
+            "SELECT chunk_id, case_id, material_id, modality, content_text, extracted_elements, source_pointer, confidence, model_version, created_at FROM evidence_chunks WHERE case_id=? ORDER BY created_at DESC LIMIT 100",
+            (case_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT chunk_id, case_id, material_id, modality, content_text, extracted_elements, source_pointer, confidence, model_version, created_at FROM evidence_chunks ORDER BY created_at DESC LIMIT 100"
+        ).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        try:
+            elements = json.loads(r[5]) if r[5] else {}
+        except Exception:
+            elements = {}
+        try:
+            source = json.loads(r[6]) if r[6] else {}
+        except Exception:
+            source = {}
+        result.append({
+            "chunk_id": r[0], "case_id": r[1], "material_id": r[2],
+            "modality": r[3], "content_text": r[4] or "",
+            "extracted_elements": elements,
+            "source_pointer": source,
+            "confidence": r[7] or 0.0, "model_version": r[8] or "",
+            "created_at": r[9] or "",
+        })
+    return result
 
 
 # ============================================================================
@@ -255,10 +289,15 @@ async def get_graph(case_id: str = "", query: str = "", case_context: str = ""):
 @app.post("/api/analyze")
 @traceable(run_type="chain", name="API.analyze")
 async def analyze(req: AnalyzeRequest):
-    """证据链分析：8-Agent 流水线。"""
+    """证据链分析：8-Agent 流水线。
+
+    mode=fast: 规则引擎，秒出结果（适合快速浏览）
+    mode=llm:  DeepSeek 深度语义分析（默认，较慢但更准确）
+    """
     from judicial_evidence_agent.core.agents.orchestrator import AgentPipeline
 
-    pipeline = AgentPipeline(stub_llm=False)
+    use_stub = req.mode == "fast"
+    pipeline = AgentPipeline(stub_llm=use_stub)
     result = await pipeline.run(
         case_id=req.case_id or "sample",
         case_name="案件",
@@ -274,16 +313,16 @@ async def agent_status():
     return {
         "agents": [
             {"name": "卷宗解析 Agent", "status": "active", "phase": 1},
-            {"name": "要素抽取 Agent", "status": "active", "phase": 2},
-            {"name": "RAG 检索 Agent", "status": "active", "phase": 3},
-            {"name": "知识图谱 Agent", "status": "active", "phase": 4},
-            {"name": "证据链分析 Agent", "status": "active", "phase": 5},
-            {"name": "置信度审查 Agent", "status": "active", "phase": 6},
-            {"name": "报告生成 Agent", "status": "active", "phase": 7},
-            {"name": "人工复核 Agent", "status": "active", "phase": 8},
+            {"name": "要素抽取 Agent ∥ RAG检索 Agent", "status": "active", "phase": 2},
+            {"name": "知识图谱 Agent", "status": "active", "phase": 3},
+            {"name": "证据链分析 Agent", "status": "active", "phase": 4},
+            {"name": "置信度审查 Agent", "status": "active", "phase": 5},
+            {"name": "报告生成 Agent", "status": "active", "phase": 6},
+            {"name": "人工复核 Agent", "status": "active", "phase": 7},
         ],
-        "pipeline": "sequential",
-        "orchestration": "LangGraph (planning)",
+        "pipeline": "parallel (phase 2: extractor ∥ rag)",
+        "orchestration": "LangGraph + asyncio.gather",
+        "modes": ["fast (规则引擎, <1s)", "llm (DeepSeek深度分析, ~30s)"],
     }
 
 
@@ -293,13 +332,140 @@ async def agent_status():
 
 @app.get("/api/reports")
 async def list_reports(case_id: str = ""):
-    """报告列表。"""
-    return [{
-        "report_id": "RPT-2024-001",
-        "case_id": "1",
-        "title": "王某故意伤害案 — 证据链审查报告",
-        "created_at": "2024-08-12T16:30:00",
-    }]
+    """报告列表 — 从已复核完成的案件生成。"""
+    import sqlite3, json
+
+    conn = sqlite3.connect("data/judicial_evidence.db")
+    where = "WHERE review_status IN ('confirmed','rejected','needs_supplement')"
+    params = ()
+    if case_id:
+        where += " AND case_id=?"
+        params = (case_id,)
+
+    rows = conn.execute(
+        f"SELECT case_id, case_name, review_status, judgment_key, case_summary, charges, core_disputes "
+        f"FROM annotated_cases {where} ORDER BY case_name LIMIT 50",
+        params,
+    ).fetchall()
+
+    reports = []
+    for r in rows:
+        cid, name, status, judgment, summary, charges_json, disputes_json = r
+        try:
+            charges = json.loads(charges_json) if charges_json else []
+            disputes = json.loads(disputes_json) if disputes_json else []
+        except Exception:
+            charges, disputes = [], []
+
+        reports.append({
+            "report_id": cid,
+            "case_id": cid,
+            "title": f"{name} — 证据链审查报告",
+            "status": status,
+            "judgment": judgment or "",
+            "charges": charges,
+            "disputes": disputes,
+            "summary": (summary or "")[:200],
+            "created_at": "",
+        })
+
+    conn.close()
+
+    if not reports:
+        return [{
+            "report_id": "",
+            "case_id": case_id or "",
+            "title": "暂无已完成的审查报告",
+            "status": "empty",
+            "judgment": "",
+            "charges": [],
+            "disputes": [],
+            "summary": "",
+            "created_at": "",
+        }]
+    return reports
+
+
+@app.get("/api/reports/{report_id}")
+async def get_report(report_id: str):
+    """单份报告详情。"""
+    import sqlite3, json
+
+    conn = sqlite3.connect("data/judicial_evidence.db")
+    row = conn.execute(
+        """SELECT a.case_id, a.case_name, a.review_status, a.judgment_key,
+                  a.case_summary, a.charges, a.core_disputes, a.evidence_types,
+                  a.applicable_articles, a.retry_count,
+                  c.description, c.charge, c.article
+           FROM annotated_cases a
+           LEFT JOIN cases c ON a.case_id = c.case_id
+           WHERE a.case_id=?""",
+        (report_id,),
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        return {"error": "报告不存在", "report_id": report_id}
+
+    # 加载关联证据
+    ev_rows = conn.execute(
+        "SELECT content_text, extracted_elements, modality FROM evidence_chunks WHERE case_id=? LIMIT 15",
+        (report_id,),
+    ).fetchall()
+    evidence = []
+    for ev in ev_rows:
+        try:
+            meta = json.loads(ev[1]) if ev[1] else {}
+            etype = meta.get("evidence_type", "")
+        except Exception:
+            etype = ""
+        evidence.append({
+            "content": (ev[0] or "")[:300],
+            "type": etype or ev[2] or "",
+        })
+
+    # 加载审计日志（复核历史）
+    audit_rows = conn.execute(
+        "SELECT timestamp, action, detail FROM audit_logs WHERE target_id=? ORDER BY timestamp ASC",
+        (report_id,),
+    ).fetchall()
+    review_history = []
+    for ar in audit_rows:
+        try:
+            d = json.loads(ar[2]) if ar[2] else {}
+        except Exception:
+            d = {}
+        review_history.append({
+            "timestamp": ar[0],
+            "action": ar[1],
+            "note": d.get("note", ""),
+            "new_confidence": d.get("new_confidence"),
+        })
+
+    conn.close()
+
+    try:
+        charges = json.loads(row[5]) if row[5] else []
+        disputes = json.loads(row[6]) if row[6] else []
+        evidence_types = json.loads(row[7]) if row[7] else []
+        articles = json.loads(row[8]) if row[8] else []
+    except Exception:
+        charges, disputes, evidence_types, articles = [], [], [], []
+
+    return {
+        "report_id": row[0],
+        "case_name": row[1],
+        "status": row[2],
+        "judgment": row[3] or "",
+        "summary": row[4] or row[10] or "",
+        "charges": charges or ([row[11]] if row[11] else []),
+        "disputes": disputes,
+        "evidence_types": evidence_types,
+        "articles": articles or ([row[12]] if row[12] else []),
+        "retry_count": row[9] or 0,
+        "evidence": evidence,
+        "review_history": review_history,
+    }
 
 
 # ============================================================================
@@ -314,9 +480,11 @@ async def list_reviews(case_id: str = ""):
     try:
         rows = conn.execute(
             """SELECT a.case_id, a.case_name, a.core_disputes, a.charges,
-                      a.case_summary, a.evidence_types, a.applicable_articles
-               FROM annotated_cases a WHERE a.review_status='pending'
-               LIMIT 20"""
+                      a.case_summary, a.evidence_types, a.applicable_articles,
+                      COALESCE(a.retry_count, 0) as retry_count
+               FROM annotated_cases a
+               WHERE a.review_status='pending' AND a.case_id != '_init_' AND a.case_name != '_init_'
+               LIMIT 50"""
         ).fetchall()
         if rows:
             items = []
@@ -421,9 +589,10 @@ async def list_reviews(case_id: str = ""):
                     detail_parts.append(f"摘要: {summary[:120]}")
 
                 items.append({
-                    "id": r[0], "type": "annotation", "title": r[1],
+                    "id": r[0], "type": "evidence", "title": r[1],
                     "detail": "\n".join(detail_parts),
                     "confidence": confidence, "status": "pending",
+                    "retry_count": r[7] if len(r) > 7 else 0,
                 })
             conn.close()
             return items
@@ -464,17 +633,279 @@ def _extract_disputes_heuristic(text: str) -> list[str]:
 
 @app.post("/api/reviews/{review_id}")
 async def submit_review(review_id: str, req: ReviewAction):
-    """提交复核结果，写入数据库。"""
-    import sqlite3
+    """提交复核结果：确认直接通过；驳回触发检索重跑（最多3轮）。"""
+    import sqlite3, json, uuid
+    from datetime import datetime, timezone
+
     conn = sqlite3.connect("data/judicial_evidence.db")
-    new_status = "confirmed" if req.action == "confirm" else "rejected"
-    conn.execute(
-        "UPDATE annotated_cases SET review_status=?, judgment_key=? WHERE case_id=?",
-        (new_status, f"复核: {req.note[:80] if req.note else req.action}", review_id),
+
+    # ── 0. 确保扩展表/字段存在 ──
+    _ensure_schema(conn)
+
+    # ── 1. 映射 action → 状态 ──
+    action_map = {
+        "confirm": "confirmed", "确认": "confirmed",
+        "reject":  "rejected",  "驳回": "rejected",
+    }
+    new_status = action_map.get(req.action, req.action)
+
+    # ── 2. 确认：直接通过 ──
+    if new_status == "confirmed":
+        judgment = f"人工确认: {req.note}" if req.note else "人工确认"
+        conn.execute(
+            "UPDATE annotated_cases SET review_status=?, judgment_key=?, retry_count=0 WHERE case_id=?",
+            (new_status, judgment[:200], review_id),
+        )
+        _write_audit(conn, review_id, "human_confirm", req)
+        conn.commit(); conn.close()
+        return {"review_id": review_id, "action": req.action, "status": new_status}
+
+    # ── 3. 驳回：检查是否触发重检索 ──
+    row = conn.execute(
+        "SELECT retry_count, case_summary, charges, core_disputes FROM annotated_cases WHERE case_id=?",
+        (review_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return {"review_id": review_id, "action": req.action, "status": "rejected", "error": "案件不存在"}
+
+    retry_count, case_summary, charges_json, disputes_json = row
+    note = (req.note or "").strip()
+
+    # 驳回原因太短，不触发重检索
+    if len(note) < 5:
+        judgment = f"人工驳回（原因过短，未重检索）: {note}"
+        conn.execute(
+            "UPDATE annotated_cases SET review_status='rejected', judgment_key=? WHERE case_id=?",
+            (judgment[:200], review_id),
+        )
+        _write_audit(conn, review_id, "human_reject_skip", req, detail_extra={"reason": "note_too_short"})
+        conn.commit(); conn.close()
+        return {"review_id": review_id, "action": req.action, "status": "rejected",
+                "warning": "驳回原因不足5字，未触发重检索。请写明补证方向。"}
+
+    # 已达最大重试次数
+    if retry_count >= 3:
+        judgment = f"人工驳回（已重试{retry_count}次，标记为需补证）: {note}"
+        conn.execute(
+            "UPDATE annotated_cases SET review_status='needs_supplement', judgment_key=? WHERE case_id=?",
+            (judgment[:200], review_id),
+        )
+        _write_audit(conn, review_id, "human_reject_exhausted", req, detail_extra={"retry_count": retry_count})
+        conn.commit(); conn.close()
+        return {"review_id": review_id, "action": req.action, "status": "needs_supplement",
+                "message": f"已重试{retry_count}次仍不通过，标记为需补证。请补充新材料后重新分析。"}
+
+    # ── 4. 驳回重检索 ──
+    # 聚合历史已见 chunk_id
+    old_audit = conn.execute(
+        "SELECT detail FROM audit_logs WHERE target_id=? AND action LIKE 'human_reject%' ORDER BY timestamp DESC",
+        (review_id,),
+    ).fetchall()
+    seen_ids = set()
+    for (d,) in old_audit:
+        try:
+            detail = json.loads(d)
+            for cid in detail.get("chunk_ids", []):
+                seen_ids.add(cid)
+        except Exception:
+            pass
+
+    # 构建搜索查询：原案由 + 驳回原因作为补证方向
+    try:
+        charges = json.loads(charges_json) if charges_json else []
+        disputes = json.loads(disputes_json) if disputes_json else []
+    except Exception:
+        charges, disputes = [], []
+
+    search_parts = [case_summary or ""] + charges + disputes
+    search_query = " ".join(p for p in search_parts if p)
+    search_query = f"{search_query} 补充证据方向: {note}"
+
+    # 检索新证据（排除已见过的） + 重算置信度
+    retry_result = await _retry_retrieval_and_review(
+        query=search_query,
+        case_id=review_id,
+        exclude_ids=list(seen_ids),
+        retry_round=retry_count + 1,
     )
-    conn.commit()
-    conn.close()
-    return {"review_id": review_id, "action": req.action, "status": new_status}
+
+    new_confidence = retry_result["confidence"]
+    new_chunks = retry_result["chunks"]
+
+    # 写审计日志
+    _write_audit(conn, review_id, f"human_reject_retry_{retry_count + 1}", req,
+                 detail_extra={
+                     "retry_round": retry_count + 1,
+                     "search_query": search_query,
+                     "new_confidence": new_confidence,
+                     "new_chunks_count": len(new_chunks),
+                     "chunk_ids": [c["chunk_id"] for c in new_chunks],
+                 })
+
+    # 判断：置信度是否改善
+    if new_confidence >= 0.85:
+        # 通过！自动转确认
+        conn.execute(
+            "UPDATE annotated_cases SET review_status='confirmed', judgment_key=?, retry_count=? WHERE case_id=?",
+            (f"重检索通过（第{retry_count + 1}轮，置信度{new_confidence:.0%}）: {note}"[:200],
+             retry_count + 1, review_id),
+        )
+        conn.commit(); conn.close()
+        return {
+            "review_id": review_id, "action": req.action,
+            "status": "confirmed", "auto_confirmed": True,
+            "retry_round": retry_count + 1, "new_confidence": new_confidence,
+            "new_evidence": new_chunks,
+        }
+    elif new_confidence >= 0.70:
+        # 有改善但仍不达标
+        conn.execute(
+            "UPDATE annotated_cases SET retry_count=?, judgment_key=? WHERE case_id=?",
+            (retry_count + 1,
+             f"第{retry_count + 1}轮重检索（置信度{new_confidence:.0%}）: {note}"[:200],
+             review_id),
+        )
+        conn.commit(); conn.close()
+        return {
+            "review_id": review_id, "action": req.action,
+            "status": "retrying", "retry_round": retry_count + 1,
+            "retries_remaining": 3 - (retry_count + 1),
+            "new_confidence": new_confidence,
+            "new_evidence": new_chunks,
+            "message": f"检索到{len(new_chunks)}条新证据，置信度{new_confidence:.0%}，仍需进一步补证。还可驳回{3 - (retry_count + 1)}次。",
+        }
+    else:
+        # 未改善
+        conn.execute(
+            "UPDATE annotated_cases SET retry_count=?, judgment_key=? WHERE case_id=?",
+            (retry_count + 1,
+             f"第{retry_count + 1}轮重检索未改善（置信度{new_confidence:.0%}）: {note}"[:200],
+             review_id),
+        )
+        conn.commit(); conn.close()
+        return {
+            "review_id": review_id, "action": req.action,
+            "status": "retrying" if retry_count + 1 < 3 else "needs_supplement",
+            "retry_round": retry_count + 1,
+            "retries_remaining": max(0, 3 - (retry_count + 1)),
+            "new_confidence": new_confidence,
+            "new_evidence": new_chunks,
+            "message": f"检索结果未显著改善（置信度{new_confidence:.0%}）。建议调整补证方向后重试。" if retry_count + 1 < 3
+                       else f"已达最大重试次数（3次），标记为需补证。",
+        }
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 复核辅助函数
+# ══════════════════════════════════════════════════════════════════════
+
+def _ensure_schema(conn):
+    """确保 audit_logs 表 + annotated_cases 扩展字段存在。"""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            log_id       TEXT PRIMARY KEY,
+            timestamp    TEXT NOT NULL,
+            user_id      TEXT NOT NULL DEFAULT 'human_reviewer',
+            action       TEXT NOT NULL,
+            target_type  TEXT NOT NULL DEFAULT '',
+            target_id    TEXT,
+            detail       TEXT DEFAULT '{}',
+            model_version TEXT DEFAULT '',
+            ip_address   TEXT DEFAULT ''
+        )
+    """)
+    # 添加 retry_count 列（如果不存在）
+    try:
+        conn.execute("ALTER TABLE annotated_cases ADD COLUMN retry_count INTEGER DEFAULT 0")
+    except Exception:
+        pass  # 列已存在
+
+
+def _write_audit(conn, review_id: str, action: str, req, detail_extra=None):
+    """写入一条审计日志。"""
+    import json, uuid
+    from datetime import datetime, timezone
+
+    detail = {
+        "review_id": review_id,
+        "action": req.action,
+        "note": req.note,
+    }
+    if detail_extra:
+        detail.update(detail_extra)
+
+    conn.execute(
+        """INSERT INTO audit_logs (log_id, timestamp, user_id, action, target_type, target_id, detail, model_version, ip_address)
+           VALUES (?, ?, 'human_reviewer', ?, 'annotated_case', ?, ?, '', '')""",
+        (
+            str(uuid.uuid4()),
+            datetime.now(timezone.utc).isoformat(),
+            action,
+            review_id,
+            json.dumps(detail, ensure_ascii=False),
+        ),
+    )
+
+
+async def _retry_retrieval_and_review(
+    query: str,
+    case_id: str,
+    exclude_ids: list[str],
+    retry_round: int,
+) -> dict:
+    """执行一轮重检索 + 置信度重算。
+
+    Returns:
+        {"confidence": float, "chunks": list[dict], "dimensions": list[dict]}
+    """
+    from judicial_evidence_agent.core.evidence_chain import EvidenceChainAnalyzer
+    from judicial_evidence_agent.core.agents.base import AgentContext
+    from judicial_evidence_agent.core.agents.confidence_reviewer import ConfidenceReviewerAgent
+
+    # ── 检索（排除已见 chunk）──
+    analyzer = EvidenceChainAnalyzer(use_stub=False)
+    chunks = analyzer.retrieve(query, top_k=10, case_id=case_id, exclude_ids=exclude_ids)
+
+    # ── 构建最小上下文，重算置信度 ──
+    ctx = AgentContext(case_id=case_id, query=query)
+    ctx.retrieved_chunks = chunks
+
+    # 从已有证据链中提取要素（用于维度计算）
+    chunk_texts = [c["content"] for c in chunks if c.get("content")]
+    ctx.extracted_elements = [
+        {"category": "证据片段", "value": t[:80], "confidence": 0.7}
+        for t in chunk_texts[:10]
+    ]
+    ctx.evidence_chains = [{
+        "chain_id": f"retry-{retry_round}",
+        "fact_to_prove": query[:60],
+        "confidence": 0.5,
+        "status": "review",
+        "supporting_evidence": [{"chunk_id": c["chunk_id"]} for c in chunks[:5]],
+        "missing_evidence": [],
+    }]
+    ctx.graph_nodes = [{"id": c["chunk_id"], "type": "evidence"} for c in chunks]
+    ctx.graph_edges = []
+
+    reviewer = ConfidenceReviewerAgent()
+    ctx = await reviewer.run(ctx)
+
+    return {
+        "confidence": ctx.final_confidence,
+        "chunks": [
+            {
+                "chunk_id": c["chunk_id"],
+                "source_type": c.get("source_type", ""),
+                "content_preview": c.get("content", "")[:150],
+                "distance": c.get("distance", 0),
+                "evidence_type": c.get("evidence_type", ""),
+            }
+            for c in chunks[:8]
+        ],
+        "dimensions": ctx.confidence_dimensions,
+        "threshold": ctx.threshold_result,
+    }
 
 
 # ============================================================================

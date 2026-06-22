@@ -2,7 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(pip *)",
-      "Bash(python *)",
+      "Bash(python eval/langsmith_eval.py *)",
       "Bash(uvicorn *)",
       "Bash(make *)",
       "Bash(mkdir *)",
