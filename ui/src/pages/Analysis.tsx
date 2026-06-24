@@ -127,6 +127,7 @@ export function Analysis() {
       setElapsed(Math.round((performance.now() - t0) / 10) / 100);
       setResult(data.report?.markdown || data.analysis || JSON.stringify(data, null, 2));
       setConfidence(data.confidence || null);
+      setObserveLog(data.observe || []);
       // 图谱数据
       if (data.graph?.nodes?.length) {
         setGraphData({ nodes: data.graph.nodes, edges: data.graph.edges || [] });
@@ -322,11 +323,11 @@ export function Analysis() {
               </div>
 
               {/* Observe 决策日志 */}
-              {(observeLog.length > 0 || data?.observe?.length > 0) && (
+              {observeLog.length > 0 && (
                 <div className="mt-4 pt-3 border-t">
                   <h4 className="text-xs font-medium text-gray-400 mb-2">决策链路</h4>
                   <div className="flex gap-1.5 flex-wrap">
-                    {(observeLog.length > 0 ? observeLog : data.observe || []).map((o: any, i: number) => (
+                    {observeLog.map((o: any, i: number) => (
                       <span key={i} className={`text-xs px-2 py-0.5 rounded ${
                         o.use_llm ? "bg-blue-50 text-blue-600" : "bg-green-50 text-green-600"
                       }`}>
