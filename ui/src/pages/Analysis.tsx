@@ -16,6 +16,7 @@ export function Analysis() {
   const [query, setQuery] = useState("");
   const [caseContext, setCaseContext] = useState("");
   const [mode, setMode] = useState<"fast" | "llm">("fast");
+  const [stream, setStream] = useState(false);
   const [loading, setLoading] = useState(false);
   const [elapsed, setElapsed] = useState<number>(0);
   const [result, setResult] = useState<string | null>(null);
@@ -23,6 +24,9 @@ export function Analysis() {
   const [chunks, setChunks] = useState<any[]>([]);
   const [localEvidence, setLocalEvidence] = useState<any[]>([]);
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
+  // 流式进度
+  const [phases, setPhases] = useState<{ name: string; done: boolean }[]>([]);
+  const [observeLog, setObserveLog] = useState<any[]>([]);
   const [searchParams] = useSearchParams();
   const urlCaseId = searchParams.get("caseId") || "";
 
@@ -66,18 +70,58 @@ export function Analysis() {
     setLoading(true);
     setResult(null);
     setConfidence(null);
+    setGraphData(null);
+    setPhases([]);
     const t0 = performance.now();
 
+    if (stream) {
+      // ── SSE 流式 ──
+      try {
+        const res = await fetch("/api/analyze/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ case_id: selectedCase?.case_id || "", query, case_context: caseContext || query, mode }),
+        });
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("无法读取流");
+        const decoder = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() || "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const evt = JSON.parse(line.slice(6));
+              if (evt.phase === "complete") {
+                const data = evt.result;
+                setElapsed(Math.round((performance.now() - t0) / 10) / 100);
+                setResult(data.report?.markdown || JSON.stringify(data, null, 2));
+                setConfidence(data.confidence || null);
+                setObserveLog(data.observe || []);
+                if (data.graph?.nodes?.length) setGraphData({ nodes: data.graph.nodes, edges: data.graph.edges || [] });
+              } else {
+                setPhases(prev => [...prev, { name: evt.phase, done: true }]);
+              }
+            }
+          }
+        }
+      } catch (e: any) {
+        setResult(`流式错误: ${e.message}`);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // ── 普通模式 ──
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          case_id: selectedCase?.case_id || "",
-          query: query,
-          case_context: caseContext || query,
-          mode: mode,
-        }),
+        body: JSON.stringify({ case_id: selectedCase?.case_id || "", query, case_context: caseContext || query, mode }),
       });
       const data = await res.json();
       setElapsed(Math.round((performance.now() - t0) / 10) / 100);
@@ -134,7 +178,7 @@ export function Analysis() {
 
           {/* 模式切换 */}
           <label className="block text-sm text-gray-500 mb-1">分析模式</label>
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-2">
             <button
               onClick={() => setMode("fast")}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -156,6 +200,10 @@ export function Analysis() {
               🧠 深度
             </button>
           </div>
+          <label className="flex items-center gap-2 text-xs text-gray-400 mb-4 cursor-pointer">
+            <input type="checkbox" checked={stream} onChange={e => setStream(e.target.checked)} className="rounded" />
+            流式输出（边跑边看进度）
+          </label>
 
           <label className="block text-sm text-gray-500 mb-1">分析问题</label>
           <textarea
@@ -177,12 +225,30 @@ export function Analysis() {
             disabled={loading || !query.trim()}
             className="w-full py-2.5 bg-[var(--color-accent)] text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? (mode === "fast" ? "分析中..." : "DeepSeek 深度分析中...") : "开始分析"}
+            {loading ? (stream ? "流式分析中..." : mode === "fast" ? "分析中..." : "DeepSeek 深度分析中...") : "开始分析"}
           </button>
         </div>
 
         {/* 结果区 */}
         <div className="lg:col-span-2 space-y-6">
+          {/* 流式进度条 */}
+          {stream && phases.length > 0 && (
+            <div className="bg-white rounded-lg border p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">执行进度</h3>
+              <div className="flex flex-wrap gap-1.5">
+                {["卷宗解析","要素抽取","RAG检索","知识图谱","证据链分析","置信度审查","报告生成","人工复核"].map(name => {
+                  const done = phases.some(p => p.name === name);
+                  return (
+                    <span key={name} className={`text-xs px-2 py-1 rounded-full transition-colors ${
+                      done ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-300"
+                    }`}>
+                      {done ? "✓" : "○"} {name}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {/* 本案证据（优先） */}
           {localEvidence.length > 0 && (
             <div className="bg-green-50 rounded-lg border border-green-200 p-4">
@@ -254,6 +320,22 @@ export function Analysis() {
               <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
                 {result}
               </div>
+
+              {/* Observe 决策日志 */}
+              {(observeLog.length > 0 || data?.observe?.length > 0) && (
+                <div className="mt-4 pt-3 border-t">
+                  <h4 className="text-xs font-medium text-gray-400 mb-2">决策链路</h4>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {(observeLog.length > 0 ? observeLog : data.observe || []).map((o: any, i: number) => (
+                      <span key={i} className={`text-xs px-2 py-0.5 rounded ${
+                        o.use_llm ? "bg-blue-50 text-blue-600" : "bg-green-50 text-green-600"
+                      }`}>
+                        {o.agent}: {o.use_llm ? "LLM" : "规则"}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

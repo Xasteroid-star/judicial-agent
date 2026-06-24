@@ -7,6 +7,7 @@ from judicial_evidence_agent.core.config import settings  # noqa: F401
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from langsmith import traceable
 from pydantic import BaseModel
@@ -23,6 +24,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 启动预热：预加载 BGE 模型 + 向量索引，避免首次请求等待
+# ══════════════════════════════════════════════════════════════════════
+
+@app.on_event("startup")
+async def warmup():
+    """启动时预加载 BGE 中文模型和向量索引。"""
+    import os, time
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
+    # 1. 预加载 BGE 模型（首次 5-15s，之后内存常驻）
+    t0 = time.time()
+    try:
+        from judicial_evidence_agent.core.evidence_chain import EvidenceChainAnalyzer
+        EvidenceChainAnalyzer()  # 触发类变量 _model_cache 初始化
+        print(f"[warmup] BGE model loaded in {time.time() - t0:.1f}s")
+    except Exception as e:
+        print(f"[warmup] BGE model skip ({e})")
+
+    # 2. 预连接 SQLite
+    try:
+        import sqlite3
+        conn = sqlite3.connect("data/judicial_evidence.db")
+        conn.execute("SELECT 1 FROM annotated_cases LIMIT 1")
+        conn.close()
+        print(f"[warmup] SQLite OK")
+    except Exception as e:
+        print(f"[warmup] SQLite skip ({e})")
 
 
 # ============================================================================
@@ -304,6 +335,89 @@ async def analyze(req: AnalyzeRequest):
         query=req.query,
         case_context=req.case_context,
     )
+    return result
+
+
+@app.post("/api/analyze/stream")
+async def analyze_stream(req: AnalyzeRequest):
+    """证据链分析 SSE 流式 — 每完成一个Agent就推送进度。"""
+    import json, asyncio
+    from judicial_evidence_agent.core.agents.orchestrator import AgentPipeline
+
+    async def generate():
+        use_stub = req.mode == "fast"
+        pipeline = AgentPipeline(stub_llm=use_stub)
+
+        # 用 pipeline 的分步执行推送进度
+        from judicial_evidence_agent.core.agents.base import AgentContext
+        from judicial_evidence_agent.core.guardrails import MAX_RETRY_COUNT
+        from judicial_evidence_agent.core.observe import clear_observe_log, get_observe_log
+
+        clear_observe_log()
+        ctx = AgentContext(
+            case_id=req.case_id or "sample",
+            case_name="案件",
+            query=req.query,
+            case_context=req.case_context,
+        )
+
+        phases = [
+            ("卷宗解析", pipeline._docket_parser),
+            ("要素抽取", pipeline._element_extractor),
+            ("RAG检索", pipeline._rag_retriever),
+            ("知识图谱", pipeline._knowledge_graph),
+            ("证据链分析", pipeline._evidence_chain),
+            ("置信度审查", pipeline._confidence_reviewer),
+            ("报告生成", pipeline._report_generator),
+            ("人工复核", pipeline._human_review),
+        ]
+
+        for name, agent in phases:
+            ctx = await agent.run(ctx)
+            yield f"data: {json.dumps({'phase': name, 'status': 'done'}, ensure_ascii=False)}\n\n"
+
+        result = pipeline._serialize(ctx)
+        result["observe"] = get_observe_log()
+        yield f"data: {json.dumps({'phase': 'complete', 'result': result}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+# ── 内存缓存：相同 (case_id, query, mode) 5分钟内秒返 ──
+_cache: dict = {}
+_cache_ttl = 300  # 秒
+
+
+@app.post("/api/analyze/cached")
+async def analyze_cached(req: AnalyzeRequest):
+    """证据链分析（带缓存）— 相同请求5分钟内秒返。"""
+    import hashlib, json, time
+    from judicial_evidence_agent.core.agents.orchestrator import AgentPipeline
+
+    key = hashlib.md5(
+        f"{req.case_id}|{req.query}|{req.case_context}|{req.mode}".encode()
+    ).hexdigest()
+
+    now = time.time()
+    if key in _cache and now - _cache[key][0] < _cache_ttl:
+        result = _cache[key][1]
+        result["cached"] = True
+        return result
+
+    use_stub = req.mode == "fast"
+    pipeline = AgentPipeline(stub_llm=use_stub)
+    result = await pipeline.run(
+        case_id=req.case_id or "sample",
+        case_name="案件",
+        query=req.query,
+        case_context=req.case_context,
+    )
+    _cache[key] = (now, result)
+    # 淘汰过期缓存
+    for k in list(_cache.keys()):
+        if now - _cache[k][0] > _cache_ttl:
+            del _cache[k]
+
     return result
 
 
