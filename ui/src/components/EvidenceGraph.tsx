@@ -26,63 +26,76 @@ export function EvidenceGraph({ nodes, edges }: Props) {
 
   useEffect(() => {
     if (!containerRef.current) return;
+    // 销毁旧实例
+    if (cyRef.current) {
+      try { cyRef.current.destroy(); } catch (_) {}
+      cyRef.current = null;
+    }
 
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements: [
-        ...nodes.map((n) => ({
-          data: {
-            id: n.id,
-            label: `${n.label}`,
-            type: n.type,
+    try {
+      const cy = cytoscape({
+        container: containerRef.current,
+        elements: [
+          ...nodes.map((n) => ({
+            data: {
+              id: n.id,
+              label: `${n.label}`,
+              type: n.type,
+            },
+          })),
+          ...edges.map((e) => ({
+            data: {
+              id: `${e.from}->${e.to}`,
+              source: e.from,
+              target: e.to,
+              label: e.relation,
+              confidence: e.confidence,
+            },
+          })),
+        ],
+        style: [
+          {
+            selector: "node",
+            style: {
+              "background-color": (el) => TYPE_COLORS[el.data("type")] || "#6b7280",
+              label: "data(label)",
+              "text-valign": "bottom",
+              "text-halign": "center",
+              "font-size": "10px",
+              "text-wrap": "wrap",
+              "text-max-width": "120px",
+              color: "#374151",
+            },
           },
-        })),
-        ...edges.map((e) => ({
-          data: {
-            id: `${e.from}->${e.to}`,
-            source: e.from,
-            target: e.to,
-            label: e.relation,
-            confidence: e.confidence,
+          {
+            selector: "edge",
+            style: {
+              width: 2,
+              "line-color": (el) => (el.data("confidence") > 0.7 ? "#16a34a" : "#f59e0b"),
+              "target-arrow-color": (el) => (el.data("confidence") > 0.7 ? "#16a34a" : "#f59e0b"),
+              "target-arrow-shape": "triangle",
+              "curve-style": "bezier",
+              label: "data(label)",
+              "font-size": "9px",
+              color: "#9ca3af",
+            },
           },
-        })),
-      ],
-      style: [
-        {
-          selector: "node",
-          style: {
-            "background-color": (el) => TYPE_COLORS[el.data("type")] || "#6b7280",
-            label: "data(label)",
-            "text-valign": "bottom",
-            "text-halign": "center",
-            "font-size": "10px",
-            "text-wrap": "wrap",
-            "text-max-width": "120px",
-            color: "#374151",
-          },
-        },
-        {
-          selector: "edge",
-          style: {
-            width: 2,
-            "line-color": (el) => (el.data("confidence") > 0.7 ? "#16a34a" : "#f59e0b"),
-            "target-arrow-color": (el) => (el.data("confidence") > 0.7 ? "#16a34a" : "#f59e0b"),
-            "target-arrow-shape": "triangle",
-            "curve-style": "bezier",
-            label: "data(label)",
-            "font-size": "9px",
-            color: "#9ca3af",
-          },
-        },
-      ],
-      layout: {
-        name: "dagre",
-      } as any,
-      wheelSensitivity: 0.3,
-    });
+        ],
+        layout: { name: "dagre" } as any,
+        wheelSensitivity: 0.3,
+      });
 
-    cyRef.current = cy;
-    return () => cy.destroy();
+      cyRef.current = cy;
+    } catch (e) {
+      console.error("Cytoscape init failed:", e);
+    }
+
+    return () => {
+      if (cyRef.current) {
+        try { cyRef.current.destroy(); } catch (_) {}
+        cyRef.current = null;
+      }
+    };
   }, [nodes, edges]);
 
   return (

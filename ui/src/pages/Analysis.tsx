@@ -1,7 +1,8 @@
 /** 证据链分析 — 先从 DB 加载本案证据，再 RAG 补充，图谱动态生成 */
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { useSearchParams } from "react-router-dom";
-import { EvidenceGraph } from "../components/EvidenceGraph";
+
+const EvidenceGraph = lazy(() => import("../components/EvidenceGraph").then(m => ({ default: m.EvidenceGraph })));
 
 interface CaseOption {
   case_id: string;
@@ -289,7 +290,9 @@ export function Analysis() {
 
           {/* 知识图谱 */}
           {graphData && graphData.nodes.length > 0 && (
-            <EvidenceGraph nodes={graphData.nodes} edges={graphData.edges} />
+            <Suspense fallback={<div className="bg-white rounded-lg border p-4 text-center text-gray-400">加载图谱中...</div>}>
+              <EvidenceGraph nodes={graphData.nodes} edges={graphData.edges} />
+            </Suspense>
           )}
 
           {/* LLM 分析报告 */}
