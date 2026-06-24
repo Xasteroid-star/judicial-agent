@@ -32,28 +32,44 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def warmup():
-    """启动时预加载 BGE 中文模型和向量索引。"""
-    import os, time
+    """启动时预加载 BGE 模型 + 向量索引（不阻塞超过 10s）。"""
+    import os, time, threading
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
-    # 1. 预加载 BGE 模型（首次 5-15s，之后内存常驻）
-    t0 = time.time()
-    try:
-        from judicial_evidence_agent.core.evidence_chain import EvidenceChainAnalyzer
-        EvidenceChainAnalyzer()  # 触发类变量 _model_cache 初始化
-        print(f"[warmup] BGE model loaded in {time.time() - t0:.1f}s")
-    except Exception as e:
-        print(f"[warmup] BGE model skip ({e})")
+    def _warmup_bge():
+        t0 = time.time()
+        try:
+            from sentence_transformers import SentenceTransformer
+            import numpy as np, json
+            from pathlib import Path
+            model = SentenceTransformer("BAAI/bge-small-zh-v1.5", device="cpu", local_files_only=True)
+            print(f"[warmup] BGE model loaded in {time.time()-t0:.1f}s")
+        except Exception as e:
+            print(f"[warmup] BGE skip ({e})")
 
-    # 2. 预连接 SQLite
-    try:
-        import sqlite3
-        conn = sqlite3.connect("data/judicial_evidence.db")
-        conn.execute("SELECT 1 FROM annotated_cases LIMIT 1")
-        conn.close()
-        print(f"[warmup] SQLite OK")
-    except Exception as e:
-        print(f"[warmup] SQLite skip ({e})")
+    def _warmup_db():
+        try:
+            import sqlite3
+            conn = sqlite3.connect("data/judicial_evidence.db")
+            conn.execute("SELECT 1 FROM annotated_cases LIMIT 1").fetchone()
+            conn.close()
+            print("[warmup] SQLite OK")
+        except Exception as e:
+            print(f"[warmup] SQLite skip ({e})")
+
+    def _warmup_bm25():
+        t0 = time.time()
+        try:
+            from judicial_evidence_agent.core.evidence_chain import EvidenceChainAnalyzer
+            EvidenceChainAnalyzer()  # 构建 BM25 索引
+            print(f"[warmup] BM25 index built in {time.time()-t0:.1f}s")
+        except Exception as e:
+            print(f"[warmup] BM25 skip ({e})")
+
+    # 并行预热
+    threading.Thread(target=_warmup_bge, daemon=True).start()
+    threading.Thread(target=_warmup_db, daemon=True).start()
+    threading.Thread(target=_warmup_bm25, daemon=True).start()
 
 
 # ============================================================================
