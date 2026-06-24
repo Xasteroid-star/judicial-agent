@@ -17,13 +17,20 @@ LLM_SYSTEM_PROMPT = """你是中国刑事证据审查专家助理，负责撰写
 6. 证据链状态为 ✗驳回 时，报告必须明确指出"证据不足""无法认定"，严禁使用"证据确实充分"
 7. 行文规范，符合公诉文书风格
 
+格式要求（重要）：
+- 案件事实、证据清单等内容必须用列表/分点呈现，不可用长段落堆砌
+- 每个证据项独占一行，以 "- " 开头
+- 要素抽取结果用表格或分点展示
+- 大段文字超过 3 行必须拆分为小段落或列表
+
 报告结构：
-## 一、案件材料处理概况
-## 二、核心证据链分析
-## 三、对立证据与风险识别
-## 四、置信度审查说明
-## 五、补证与复核建议
-## 六、主要溯源清单
+## 一、案件基本情况（事实描述用分点列表）
+## 二、案件材料处理概况
+## 三、核心证据链分析
+## 四、对立证据与风险识别
+## 五、置信度审查说明
+## 六、补证与复核建议
+## 七、主要溯源清单
 
 请直接输出报告正文，不要输出 JSON 或其他格式。"""
 
@@ -186,46 +193,71 @@ class ReportGeneratorAgent(BaseAgent):
 
     @staticmethod
     def _generate_template(ctx: AgentContext) -> str:
-        """模板报告（LLM 不可用时的 fallback）。"""
+        """模板报告（规则引擎 / LLM 不可用时的 fallback）。"""
+        # ── 一、案件基本情况 ──
+        case_info_lines = [
+            f"- **案由**: {ctx.query or '（待补充）'}",
+            f"- **案情摘要**: {ctx.case_context or '（待补充）'}",
+        ]
+        # 要素列表分点
+        if ctx.extracted_elements:
+            case_info_lines.append(f"\n**已抽取要素** ({len(ctx.extracted_elements)} 项):")
+            for e in ctx.extracted_elements[:10]:
+                conf = e.get("confidence", 0)
+                icon = "✓" if conf >= 0.8 else "⚠" if conf >= 0.6 else "✗"
+                case_info_lines.append(f"  - {icon} {e.get('category', '?')}: {e.get('value', '?')} （置信度 {conf:.0%}）")
+        case_info = "\n".join(case_info_lines)
+
+        # ── 案件材料概况 ──
         materials_summary = (
-            f"本案解析材料 {len(ctx.material_ids)} 件。\n"
-            f"抽取司法要素 {len(ctx.extracted_elements)} 项。\n"
-            f"向量检索命中相关法条 {len(ctx.retrieved_statutes)} 条、"
-            f"案件证据片段 {len(ctx.retrieved_chunks)} 条。\n"
-            f"构建图谱节点 {len(ctx.graph_nodes)} 个、关系边 {len(ctx.graph_edges)} 条。"
+            f"- 卷宗材料: {len(ctx.material_ids)} 件\n"
+            f"- 司法要素: {len(ctx.extracted_elements)} 项\n"
+            f"- 检索法条: {len(ctx.retrieved_statutes)} 条\n"
+            f"- 证据片段: {len(ctx.retrieved_chunks)} 条\n"
+            f"- 图谱节点: {len(ctx.graph_nodes)} 个 / 关系边: {len(ctx.graph_edges)} 条"
         )
 
+        # ── 核心证据链 ──
         chains_content = []
         for ch in ctx.evidence_chains:
-            support_list = "\n".join(
-                f"  - [{ev['type']}] {ev['content'][:80]}"
-                f"（来源: {ev.get('chunk_id', '?')[:20]}）"
-                for ev in ch.get("supporting_evidence", [])
-            )
-            missing = (
-                "、".join(ch.get("missing_evidence", []))
-                if ch.get("missing_evidence")
-                else "无"
-            )
             status_label = {
                 "pass": "✓ 通过",
                 "review": "⚠ 需复核",
                 "reject": "✗ 驳回",
             }.get(ch.get("status", ""), ch.get("status", ""))
 
+            support_ev = ch.get("supporting_evidence", [])
+            if support_ev:
+                support_list = "\n".join(
+                    f"  {i+1}. [{ev.get('type','证据')}] {ev.get('content','')[:120]}"
+                    f"\n     > 来源: `{ev.get('chunk_id','?')[:24]}`"
+                    for i, ev in enumerate(support_ev[:8])
+                )
+            else:
+                support_list = "  （无具体证据项）"
+
+            missing = ch.get("missing_evidence", [])
+            missing_text = "\n".join(f"  - {m}" for m in missing) if missing else "  无"
+
+            reasoning = ch.get("llm_reasoning", "")
+            reasoning_block = f"\n- **分析说明**: {reasoning[:300]}" if reasoning else ""
+
             chains_content.append(
-                f"### {ch['chain_id']} {status_label}\n\n"
-                f"- 待证事实：{ch['fact_to_prove']}\n"
-                f"- 法律依据：{ch['legal_basis']}\n"
-                f"- 置信度：{ch['confidence']:.2f}\n"
-                f"- 支撑证据：\n{support_list}\n"
-                f"- 缺失证据：{missing}"
+                f"### {status_label} — {ch.get('fact_to_prove', '待证事实')}\n\n"
+                f"- **法律依据**: {ch.get('legal_basis', '刑法相关条文')}\n"
+                f"- **综合置信度**: **{ch.get('confidence', 0):.0%}**\n"
+                f"- **支撑证据**:\n{support_list}\n"
+                f"- **缺失证据**:\n{missing_text}"
+                f"{reasoning_block}"
             )
 
+        # ── 对立证据与风险 ──
         if ctx.conflicts:
             conflicts_text = "\n".join(
-                f"- [{c['risk_level']}风险] {c['type']}：{c['claim_a']} ↔ {c['claim_b']}"
-                f" → {c['resolution']}"
+                f"- **[{c.get('risk_level','?')}风险]** {c.get('type','')}\n"
+                f"  - 甲方: {c.get('claim_a','')}\n"
+                f"  - 乙方: {c.get('claim_b','')}\n"
+                f"  - 建议: {c.get('resolution','')}"
                 for c in ctx.conflicts
             )
         else:
@@ -277,12 +309,13 @@ class ReportGeneratorAgent(BaseAgent):
         )
 
         sections = [
-            ("一、案件材料处理概况", materials_summary),
-            ("二、核心证据链分析", "\n\n".join(chains_content)),
-            ("三、对立证据与风险识别", conflicts_text),
-            ("四、置信度审查说明", confidence_text),
-            ("五、补证与复核建议", supplementation),
-            ("六、主要溯源清单", source_table),
+            ("一、案件基本情况", case_info),
+            ("二、案件材料处理概况", materials_summary),
+            ("三、核心证据链分析", "\n\n".join(chains_content)),
+            ("四、对立证据与风险识别", conflicts_text),
+            ("五、置信度审查说明", confidence_text),
+            ("六、补证与复核建议", supplementation),
+            ("七、主要溯源清单", source_table),
         ]
 
         return "\n".join(

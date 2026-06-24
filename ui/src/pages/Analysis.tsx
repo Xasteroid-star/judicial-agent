@@ -11,6 +11,27 @@ interface CaseOption {
   fact?: string;
 }
 
+/** 简易 Markdown 渲染 — 支持标题/列表/粗体/代码 */
+function Markdown({ text }: { text: string }) {
+  const html = text
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/^### (.+)$/gm, '<h4 class="text-sm font-semibold text-gray-800 mt-4 mb-2">$1</h4>')
+    .replace(/^## (.+)$/gm, '<h3 class="text-base font-bold text-gray-800 mt-5 mb-3 border-b pb-1">$1</h3>')
+    .replace(/^# (.+)$/gm, '<h2 class="text-lg font-bold text-gray-900 mt-6 mb-3">$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+    .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 rounded text-xs">$1</code>')
+    .replace(/^> (.+)$/gm, '<blockquote class="border-l-2 border-gray-300 pl-3 text-gray-500 text-xs">$1</blockquote>')
+    .replace(/\n\n/g, "</p><p class='mb-2'>")
+    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc text-sm">$1</li>')
+    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal text-sm">$2</li>')
+    .replace(/(<li[^>]*>.*<\/li>\n?)+/g, '<ul class="mb-2">$&</ul>')
+    // 清理重复的ul
+    .replace(/<\/ul>\n<ul class="mb-2">/g, "")
+    .replace(/<\/p><p class='mb-2'><\/p>/g, "</p>");
+
+  return <div dangerouslySetInnerHTML={{ __html: `<p class='mb-2'>${html}</p>` }} />;
+}
+
 export function Analysis() {
   const [cases, setCases] = useState<CaseOption[]>([]);
   const [selectedCase, setSelectedCase] = useState<CaseOption | null>(null);
@@ -321,8 +342,8 @@ export function Analysis() {
                   </span>
                 </div>
               </div>
-              <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
-                {result}
+              <div className="prose prose-sm max-w-none text-gray-700">
+                <Markdown text={result} />
               </div>
 
               {/* Observe 决策日志 */}
