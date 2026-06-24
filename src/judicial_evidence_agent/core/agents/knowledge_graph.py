@@ -76,10 +76,14 @@ class KnowledgeGraphAgent(BaseAgent):
         return {"name": "待确定罪名", "article": "", "label": "待确定罪名"}
 
     async def run(self, ctx: AgentContext) -> AgentContext:
+        from judicial_evidence_agent.core.observe import observe
+
         text = ctx.case_context or ""
         elements = ctx.extracted_elements
 
-        if self.llm:
+        should_llm, reason, _ = observe("knowledge_graph", ctx)
+
+        if self.llm and should_llm:
             try:
                 graph = await self._build_with_llm(text, elements)
             except Exception:

@@ -37,7 +37,11 @@ class ReportGeneratorAgent(BaseAgent):
         self.llm = llm_client
 
     async def run(self, ctx: AgentContext) -> AgentContext:
-        if self.llm:
+        from judicial_evidence_agent.core.observe import observe
+
+        should_llm, reason, _ = observe("report_generator", ctx)
+
+        if self.llm and should_llm:
             try:
                 markdown = await self._generate_with_llm(ctx)
             except Exception:

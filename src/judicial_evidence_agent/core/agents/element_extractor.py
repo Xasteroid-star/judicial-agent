@@ -40,9 +40,14 @@ class ElementExtractorAgent(BaseAgent):
         self.llm = llm_client
 
     async def run(self, ctx: AgentContext) -> AgentContext:
+        from judicial_evidence_agent.core.observe import observe
+
         text = f"{ctx.case_context} {ctx.query}"
 
-        if self.llm:
+        # Observe: 规则能拍板就不调 LLM
+        should_llm, reason, _ = observe("element_extractor", ctx)
+
+        if self.llm and should_llm:
             try:
                 elements = await self._extract_with_llm(text)
             except Exception:

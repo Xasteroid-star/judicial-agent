@@ -202,8 +202,15 @@ class EvidenceChainAgent(BaseAgent):
     # ═══════════════════════════════════════════════
 
     async def run(self, ctx: AgentContext) -> AgentContext:
-        # ── Phase 1: LLM 语义分析（主力） ──
-        llm_result = await self._llm_analysis(ctx)
+        from judicial_evidence_agent.core.observe import observe
+
+        # ── Phase 1: Observe → LLM 或规则直判 ──
+        should_llm, reason, fallback = observe("evidence_chain", ctx)
+
+        if should_llm:
+            llm_result = await self._llm_analysis(ctx)
+        else:
+            llm_result = fallback  # Observe 直接给结论，跳过 LLM
 
         # ── Phase 2: 规则解析（作为 fallback / 补充详细信息）──
         evidence_by_type: dict[str, list[dict]] = {}

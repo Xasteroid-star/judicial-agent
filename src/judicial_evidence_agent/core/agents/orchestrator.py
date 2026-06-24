@@ -79,6 +79,10 @@ class AgentPipeline:
         """执行流水线：卷宗解析后，要素抽取和 RAG 检索并行。"""
         from judicial_evidence_agent.core.guardrails import MAX_RETRY_COUNT
 
+        from judicial_evidence_agent.core.observe import clear_observe_log
+
+        clear_observe_log()  # 每次请求清空 Observe 决策记录
+
         ctx = AgentContext(
             case_id=case_id,
             case_name=case_name,
@@ -133,9 +137,12 @@ class AgentPipeline:
     @staticmethod
     def _serialize(ctx: AgentContext) -> dict:
         """序列化上下文为 API 响应格式。"""
+        from judicial_evidence_agent.core.observe import get_observe_log
+
         return {
             "case_id": ctx.case_id,
             "case_name": ctx.case_name,
+            "observe": get_observe_log(),  # 每次 LLM 调用的规则决策记录
             "processing": {
                 "materials_parsed": len(ctx.material_ids),
                 "elements_extracted": len(ctx.extracted_elements),
