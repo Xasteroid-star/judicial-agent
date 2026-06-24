@@ -35,6 +35,21 @@ LLM_SYSTEM_PROMPT = """你是中国刑事证据审查专家助理，负责撰写
 请直接输出报告正文，不要输出 JSON 或其他格式。"""
 
 
+def _split_to_bullets(text: str, min_len: int = 8) -> list[str]:
+    """将长文本按中文标点拆分为分点列表。"""
+    import re
+    # 按句号、分号、换行拆分
+    parts = re.split(r"[。；\n]+", text)
+    # 清理空白，过滤过短片段
+    result = []
+    for p in parts:
+        p = p.strip().rstrip("，,、")
+        if len(p) >= min_len:
+            result.append(p)
+    # 如果没有够长的片段，原样返回
+    return result if result else [text.strip()[:200]]
+
+
 class ReportGeneratorAgent(BaseAgent):
     """报告生成 Agent — LLM 生成 + 模板 fallback。"""
 
@@ -195,10 +210,16 @@ class ReportGeneratorAgent(BaseAgent):
     def _generate_template(ctx: AgentContext) -> str:
         """模板报告（规则引擎 / LLM 不可用时的 fallback）。"""
         # ── 一、案件基本情况 ──
+        case_text = ctx.case_context or ctx.query or "（待补充）"
+        # 将长文本按句号/分号拆为分点
+        facts_list = _split_to_bullets(case_text)
+
         case_info_lines = [
             f"- **案由**: {ctx.query or '（待补充）'}",
-            f"- **案情摘要**: {ctx.case_context or '（待补充）'}",
+            "- **事实描述**:",
         ]
+        for fact in facts_list:
+            case_info_lines.append(f"  - {fact}")
         # 要素列表分点
         if ctx.extracted_elements:
             case_info_lines.append(f"\n**已抽取要素** ({len(ctx.extracted_elements)} 项):")
