@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 import cytoscape, { type Core } from "cytoscape";
 import dagre from "cytoscape-dagre";
 
-cytoscape.use(dagre);
+// Vite HMR 可能重复注册，加 try-catch 防止报错
+try { cytoscape.use(dagre); } catch (_) {}
 
 interface Props {
   nodes: { id: string; label: string; type: string }[];
