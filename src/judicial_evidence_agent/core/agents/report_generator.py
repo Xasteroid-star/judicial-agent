@@ -334,47 +334,69 @@ class ReportGeneratorAgent(BaseAgent):
         )
 
         sources = []
-        # 法条来源
+        # ── 法条来源：提取条文编号 + 关键内容 ──
+        import re as _re
         for s in ctx.retrieved_statutes[:5]:
-            law_name = s.get('law_name', '') or s.get('name', '')
-            date = s.get('effective_date', '')[:10] or s.get('date', '')
-            content = (s.get('content', '') or '')[:80]
+            law_name = s.get('law_name', '') or '法律条文'
+            content = (s.get('content', '') or s.get('content_preview', '') or '')
+            # 提取条文号：第X条、第X条之Y
+            article = _re.search(r'(第[一二三四五六七八九十百千\d]+条(?:之[一二三四五\d]+)?)', content)
+            article_str = article.group(1) if article else ''
+            # 取法条核心内容（去掉标题标记）
+            core = _re.sub(r'^#+\s*', '', content)[:100]
             sources.append(
-                f"| 法条 | {law_name} | {date} | {content} |"
+                f"| {law_name} | {article_str} | {core} |"
             )
-        # 证据来源
+
+        # ── 证据来源：提取可追溯的定位信息 ──
         for c in ctx.retrieved_chunks[:8]:
             etype = c.get('evidence_type', '证据')
-            content = (c.get('content', '') or c.get('content_preview', '') or '')[:80]
-            src = _readable_source(c.get('chunk_id', ''))
+            content = (c.get('content', '') or c.get('content_preview', '') or '')[:100]
+            # 尝试从 source_pointer 或 meta 提取真实定位
+            sp = c.get('source_pointer', {}) or {}
+            if isinstance(sp, str):
+                try: import json; sp = json.loads(sp)
+                except: sp = {}
+            material = sp.get('material_id', '') or c.get('material_id', '') or c.get('case_id', '')
+            page = sp.get('page', '') or sp.get('page_number', '')
+            para = sp.get('paragraph', '') or sp.get('line_number', '')
+            loc = f"卷{str(material)[:12]}" if material else ''
+            if page: loc += f" 第{page}页"
+            if para: loc += f" 第{para}段"
+            if not loc: loc = f"案件材料 ({str(c.get('chunk_id',''))[:8]}...)"
             sources.append(
-                f"| {etype} | {content} | {src} |"
+                f"| {etype} | {loc} | {content} |"
             )
-        # 从证据链中提取来源
+
+        # ── 从证据链补充 ──
+        seen_contents = set()
+        for s in sources:
+            seen_contents.add(s[50:150])  # 内容片段去重
         for ch in ctx.evidence_chains:
             for ev in ch.get("supporting_evidence", []):
+                content = (ev.get('content', '') or '')[:100]
+                if content[:60] in seen_contents:
+                    continue
+                seen_contents.add(content[:60])
                 etype = ev.get('type', '证据')
-                src = _readable_source(ev.get('chunk_id', ''))
-                content = (ev.get('content', '') or '')[:80]
-                if content:
-                    sources.append(f"| {etype} | {content} | {src} |")
+                cid = ev.get('chunk_id', '')
+                src = _readable_source(cid)
+                sources.append(
+                    f"| {etype} | {src} | {content} |"
+                )
 
         if sources:
-            # 去重
-            seen = set()
-            uniq = []
-            for s in sources:
-                h = hash(s)
-                if h not in seen:
-                    seen.add(h)
-                    uniq.append(s)
             source_table = (
-                "| 类型 | 内容 | 来源 |\n"
-                "|------|------|------|\n"
-                + "\n".join(uniq[:15])
+                "| 法条/证据 | 定位 | 内容摘要 |\n"
+                "|-----------|------|----------|\n"
+                + "\n".join(sources[:15])
             )
         else:
-            source_table = "暂无检索结果，无法建立溯源清单。建议补充卷宗材料。\n\n> 提示：溯源清单在检索到法条或证据片段后自动生成。"
+            source_table = (
+                "暂无检索结果，无法建立溯源清单。\n\n"
+                "> 💡 溯源清单在完成检索后自动生成，包含每项证据的可追溯定位信息。\n"
+                "> 建议：上传卷宗材料或选择有证据片段的案件进行分析。"
+            )
 
         sections = [
             ("一、案件基本情况", case_info),
