@@ -110,50 +110,28 @@ def observe_evidence_chain(ctx: AgentContext) -> tuple[bool, str, Optional[dict]
             "reasoning": "规则Observe判定：检索命中数为0，证据链不成立",
         }
 
-    # 证据充足 → 规则推断
-    if chunk_count >= 4 and type_count >= 2:
-        return False, f"证据充足({chunk_count}条/{type_count}类)，规则分析", {
+    # 证据充足且类型丰富 → 规则直接通过（确定）
+    if chunk_count >= 5 and type_count >= 3:
+        return False, f"证据充足({chunk_count}条/{type_count}类)，规则通过", {
             "chain_status": "pass",
             "evidence_types": list(evidence_types),
             "missing_evidence": [],
             "confidence": min(0.85 + type_count * 0.02, 0.95),
-            "reasoning": f"规则Observe判定：检索到{chunk_count}条证据/{type_count}类，证据链完整",
+            "reasoning": f"规则判定：检索到{chunk_count}条证据/{type_count}类，证据链完整",
         }
 
-    # 有法条 + 有证据 → 规则推断
-    if chunk_count >= 2 and statute_count >= 1:
-        return False, "有法条+证据支撑，规则分析", {
-            "chain_status": "pass" if type_count >= 2 else "review",
-            "evidence_types": list(evidence_types),
-            "missing_evidence": [] if type_count >= 2 else ["证据类型单一，建议补充"],
-            "confidence": 0.70 + type_count * 0.03 + statute_count * 0.03,
-            "reasoning": f"规则Observe判定：{chunk_count}条证据+{statute_count}条法条",
+    # 完全没检索到 → 直接驳回（确定）
+    if chunk_count == 0 and statute_count == 0:
+        return False, "无检索结果，直接驳回", {
+            "chain_status": "reject",
+            "evidence_types": list(evidence_types) if evidence_types else ["无"],
+            "missing_evidence": ["无任何检索到的证据或法条，建议补充卷宗材料"],
+            "confidence": 0.10,
+            "reasoning": "规则判定：检索命中数为0，证据链不成立",
         }
 
-    # 有 chunk + 证据类型 → 规则
-    if chunk_count >= 3:
-        return False, f"证据{chunk_count}条，规则分析", {
-            "chain_status": "review" if type_count < 2 else "pass",
-            "evidence_types": list(evidence_types) if evidence_types else ["证据"],
-            "missing_evidence": [] if type_count >= 2 else ["建议补充更多证据类型"],
-            "confidence": 0.50 + chunk_count * 0.06 + type_count * 0.05,
-            "reasoning": f"规则Observe判定：{chunk_count}条证据，{type_count}类",
-        }
-
-    # 以下才走 LLM：证据很少 + 有复杂争议
-    dispute_kw = ["非法证据", "排除", "刑讯", "逼供", "正当防卫", "自首", "立功"]
-    text = f"{ctx.case_context} {ctx.query}"
-    if any(kw in text for kw in dispute_kw) and chunk_count < 3:
-        return True, "证据少但含复杂法律争议，需要LLM判断", None
-
-    # 证据极少 → 规则判定不足
-    return False, "证据过少，规则判定存疑", {
-        "chain_status": "review",
-        "evidence_types": list(evidence_types) if evidence_types else ["证据"],
-        "missing_evidence": ["证据种类不足", "需调取更多材料"],
-        "confidence": 0.30 + chunk_count * 0.10,
-        "reasoning": f"规则Observe判定：仅{chunk_count}条证据，材料不充分",
-    }
+    # 其他所有情况 → LLM 精细分析（不确定，不硬判）
+    return True, f"证据({chunk_count}条/{type_count}类)需LLM精细分析", None
 
 
 # ══════════════════════════════════════════════════════════════════════
