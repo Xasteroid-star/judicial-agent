@@ -35,6 +35,21 @@ LLM_SYSTEM_PROMPT = """你是中国刑事证据审查专家助理，负责撰写
 请直接输出报告正文，不要输出 JSON 或其他格式。"""
 
 
+def _readable_source(chunk_id: str) -> str:
+    """将 chunk_id 转为可读的来源引用。"""
+    import re
+    if not chunk_id:
+        return "未知来源"
+    # UUID 格式 → 截短
+    if re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-', chunk_id):
+        return f"材料 {chunk_id[:8]}..."
+    # 带前缀的 → 保留可读部分
+    if ':' in chunk_id:
+        prefix, rest = chunk_id.split(':', 1)
+        return f"{prefix} · {rest[:12]}"
+    return chunk_id[:24]
+
+
 def _split_to_bullets(text: str, min_len: int = 8) -> list[str]:
     """将长文本按中文标点拆分为分点列表。"""
     import re
@@ -249,11 +264,18 @@ class ReportGeneratorAgent(BaseAgent):
 
             support_ev = ch.get("supporting_evidence", [])
             if support_ev:
-                support_list = "\n".join(
-                    f"  {i+1}. [{ev.get('type','证据')}] {ev.get('content','')[:120]}"
-                    f"\n     > 来源: `{ev.get('chunk_id','?')[:24]}`"
-                    for i, ev in enumerate(support_ev[:8])
-                )
+                support_parts = []
+                for i, ev in enumerate(support_ev[:8]):
+                    etype = ev.get('type', '证据')
+                    content = ev.get('content', '')[:150]
+                    src = ev.get('chunk_id', '?')
+                    # 尽量展示可读来源而非原始 UUID
+                    src_display = _readable_source(src)
+                    support_parts.append(
+                        f"  {i+1}. **[{etype}]** {content}"
+                        f"\n     > 📎 {src_display}"
+                    )
+                support_list = "\n".join(support_parts)
             else:
                 support_list = "  （无具体证据项）"
 
@@ -312,22 +334,47 @@ class ReportGeneratorAgent(BaseAgent):
         )
 
         sources = []
+        # 法条来源
         for s in ctx.retrieved_statutes[:5]:
+            law_name = s.get('law_name', '') or s.get('name', '')
+            date = s.get('effective_date', '')[:10] or s.get('date', '')
+            content = (s.get('content', '') or '')[:80]
             sources.append(
-                f"| {s.get('chunk_id', '')[:20]} | 法条 | "
-                f"{s.get('law_name', '')} ({s.get('effective_date', '')[:10]}) |"
-                f" {s.get('distance', 0):.3f} |"
+                f"| 法条 | {law_name} | {date} | {content} |"
             )
-        for c in ctx.retrieved_chunks[:5]:
+        # 证据来源
+        for c in ctx.retrieved_chunks[:8]:
+            etype = c.get('evidence_type', '证据')
+            content = (c.get('content', '') or c.get('content_preview', '') or '')[:80]
+            src = _readable_source(c.get('chunk_id', ''))
             sources.append(
-                f"| {c.get('chunk_id', '')[:20]} | {c.get('evidence_type', '证据')} | "
-                f"{c.get('content', '')[:60]} | {c.get('distance', 0):.3f} |"
+                f"| {etype} | {content} | {src} |"
             )
-        source_table = (
-            "| ID | 类型 | 内容/来源 | 距离 |\n"
-            "|----|------|-----------|------|\n"
-            + "\n".join(sources)
-        )
+        # 从证据链中提取来源
+        for ch in ctx.evidence_chains:
+            for ev in ch.get("supporting_evidence", []):
+                etype = ev.get('type', '证据')
+                src = _readable_source(ev.get('chunk_id', ''))
+                content = (ev.get('content', '') or '')[:80]
+                if content:
+                    sources.append(f"| {etype} | {content} | {src} |")
+
+        if sources:
+            # 去重
+            seen = set()
+            uniq = []
+            for s in sources:
+                h = hash(s)
+                if h not in seen:
+                    seen.add(h)
+                    uniq.append(s)
+            source_table = (
+                "| 类型 | 内容 | 来源 |\n"
+                "|------|------|------|\n"
+                + "\n".join(uniq[:15])
+            )
+        else:
+            source_table = "暂无检索结果，无法建立溯源清单。建议补充卷宗材料。\n\n> 提示：溯源清单在检索到法条或证据片段后自动生成。"
 
         sections = [
             ("一、案件基本情况", case_info),
