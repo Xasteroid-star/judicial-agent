@@ -342,16 +342,18 @@ class ReportGeneratorAgent(BaseAgent):
             # 提取条文号：第X条、第X条之Y
             article = _re.search(r'(第[一二三四五六七八九十百千\d]+条(?:之[一二三四五\d]+)?)', content)
             article_str = article.group(1) if article else ''
-            # 取法条核心内容（去掉标题标记）
-            core = _re.sub(r'^#+\s*', '', content)[:100]
+            # 取法条核心内容（去掉标题标记，限50字分行）
+            core = _re.sub(r'^#+\s*', '', content)
+            core = core.replace('\n', ' ').strip()[:50]
             sources.append(
-                f"| {law_name} | {article_str} | {core} |"
+                f"| {law_name[:20]} | {article_str} | {core}... |"
             )
 
         # ── 证据来源：提取可追溯的定位信息 ──
         for c in ctx.retrieved_chunks[:8]:
-            etype = c.get('evidence_type', '证据')
-            content = (c.get('content', '') or c.get('content_preview', '') or '')[:100]
+            etype = c.get('evidence_type', '证据')[:8]
+            content = (c.get('content', '') or c.get('content_preview', '') or '')
+            content = content.replace('\n', ' ').strip()[:50]
             # 尝试从 source_pointer 或 meta 提取真实定位
             sp = c.get('source_pointer', {}) or {}
             if isinstance(sp, str):
@@ -363,9 +365,9 @@ class ReportGeneratorAgent(BaseAgent):
             loc = f"卷{str(material)[:12]}" if material else ''
             if page: loc += f" 第{page}页"
             if para: loc += f" 第{para}段"
-            if not loc: loc = f"案件材料 ({str(c.get('chunk_id',''))[:8]}...)"
+            if not loc: loc = f"材料 ({str(c.get('chunk_id',''))[:8]}...)"
             sources.append(
-                f"| {etype} | {loc} | {content} |"
+                f"| {etype} | {loc} | {content}... |"
             )
 
         # ── 从证据链补充 ──
@@ -374,15 +376,15 @@ class ReportGeneratorAgent(BaseAgent):
             seen_contents.add(s[50:150])  # 内容片段去重
         for ch in ctx.evidence_chains:
             for ev in ch.get("supporting_evidence", []):
-                content = (ev.get('content', '') or '')[:100]
-                if content[:60] in seen_contents:
+                content = (ev.get('content', '') or '').replace('\n', ' ').strip()[:50]
+                if content[:40] in seen_contents:
                     continue
-                seen_contents.add(content[:60])
-                etype = ev.get('type', '证据')
+                seen_contents.add(content[:40])
+                etype = ev.get('type', '证据')[:8]
                 cid = ev.get('chunk_id', '')
                 src = _readable_source(cid)
                 sources.append(
-                    f"| {etype} | {src} | {content} |"
+                    f"| {etype} | {src} | {content}... |"
                 )
 
         if sources:
