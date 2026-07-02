@@ -47,6 +47,7 @@ export function ReportView() {
   // 详情模式
   const [detail, setDetail] = useState<ReportDetail | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set([0]));
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   useEffect(() => {
     if (reportId) {
@@ -135,8 +136,59 @@ export function ReportView() {
         )}
 
         <div className="mt-6 flex gap-3 justify-end">
-          <button className="px-4 py-2 border rounded-lg text-sm text-gray-500 hover:bg-gray-50">导出 PDF</button>
-          <button className="px-4 py-2 border rounded-lg text-sm text-gray-500 hover:bg-gray-50">打印</button>
+          <button
+            onClick={async () => {
+              if (!reportId || !detail) {
+                alert("报告数据未加载");
+                return;
+              }
+              setExportingPdf(true);
+              try {
+                console.log("[PDF Export] Fetching report PDF for:", reportId);
+                const res = await fetch(`/api/reports/${reportId}/pdf`);
+                console.log("[PDF Export] Status:", res.status, "type:", res.headers.get("content-type"));
+                if (!res.ok) {
+                  const errText = await res.text();
+                  console.error("[PDF Export] Server error:", res.status, errText);
+                  throw new Error(`服务器返回 ${res.status}`);
+                }
+                const blob = await res.blob();
+                console.log("[PDF Export] Blob size:", blob.size);
+                if (blob.size < 1000) {
+                  const text = await blob.text();
+                  console.error("[PDF Export] Small/invalid PDF:", text);
+                  throw new Error("PDF 内容异常");
+                }
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${detail.case_name}_证据链审查报告.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              } catch (e: any) {
+                console.error("[PDF Export] Failed:", e);
+                alert(`PDF 导出失败: ${e.message || "未知错误"}\n\n请打开控制台 (F12) 查看详情`);
+              } finally {
+                setExportingPdf(false);
+              }
+            }}
+            disabled={exportingPdf}
+            className={`px-4 py-2 border rounded-lg text-sm transition-colors ${
+              exportingPdf
+                ? "text-gray-300 border-gray-200 cursor-wait"
+                : "text-gray-500 hover:bg-gray-50 hover:border-blue-300"
+            }`}
+          >
+            {exportingPdf ? "导出中..." : "导出 PDF"}
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="px-4 py-2 border rounded-lg text-sm text-gray-500 hover:bg-gray-50 transition-colors"
+          >
+            打印
+          </button>
         </div>
       </div>
     );

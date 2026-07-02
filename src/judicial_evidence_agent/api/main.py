@@ -5,9 +5,9 @@ from pathlib import Path
 # load_dotenv() 必须先于 langsmith import，确保 LANGCHAIN_* 环境变量就绪
 from judicial_evidence_agent.core.config import settings  # noqa: F401
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from langsmith import traceable
 from pydantic import BaseModel
@@ -209,6 +209,67 @@ async def list_materials(case_id: str = ""):
         }
         for r in rows
     ]
+
+
+@app.post("/api/materials/upload")
+async def upload_material(
+    file: UploadFile = File(...),
+    case_id: str = Form(...),
+    rebuild_index: bool = Form(False),
+):
+    """上传卷宗材料文件（PDF / 文本），自动解析、分块、入库。
+
+    Args:
+        file: 上传的文件（PDF 或纯文本）。
+        case_id: 关联的案件 ID。
+        rebuild_index: 是否在上传后自动重建向量索引（默认 False，批量摄入后手动触发）。
+
+    Returns:
+        摄入结果，包含 material_id、chunks 数量、文件 hash 等。
+    """
+    if not case_id.strip():
+        return {"error": "case_id 不能为空"}, 400
+
+    # 读取文件字节
+    file_bytes = await file.read()
+    if not file_bytes:
+        return {"error": "上传文件为空"}, 400
+
+    filename = file.filename or "unknown.pdf"
+
+    try:
+        from judicial_evidence_agent.core.ingestion import IngestionPipeline
+
+        pipeline = IngestionPipeline()
+        result = await pipeline.ingest(
+            file_bytes=file_bytes,
+            filename=filename,
+            case_id=case_id.strip(),
+            rebuild_index=rebuild_index,
+        )
+        return {"status": "ingested", **result}
+
+    except ValueError as e:
+        return {"error": str(e)}, 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": f"摄入失败: {e}"}, 500
+
+
+@app.post("/api/materials/rebuild-index")
+async def rebuild_vector_index():
+    """手动触发向量索引重建。
+
+    调用 build_vector_index.py 重新扫描 evidence_chunks + corpus 并构建索引。
+    通常在批量摄入材料后调用。
+    """
+    try:
+        from judicial_evidence_agent.core.ingestion import IngestionPipeline
+        success = IngestionPipeline._rebuild_index()
+        return {"status": "success" if success else "failed"}
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 
 @app.post("/api/materials")
@@ -514,6 +575,158 @@ async def list_reports(case_id: str = ""):
             "created_at": "",
         }]
     return reports
+
+
+# ============================================================================
+# 报告导出 API（必须在 /api/reports/{report_id} 之前，避免 "export-pdf" 被当 report_id）
+# ============================================================================
+
+
+class ExportPdfRequest(BaseModel):
+    """PDF 导出请求 — 前端分析完成后直接传入报告内容。"""
+    case_name: str = ""
+    title: str = ""
+    markdown: str
+    status: str = ""
+
+
+@app.post("/api/reports/export-pdf")
+async def export_report_pdf(req: ExportPdfRequest):
+    """将报告 Markdown 导出为 PDF 文件。
+
+    接受前端分析完成后生成的报告 Markdown，
+    使用中文字体渲染为 PDF 并返回下载。
+
+    Returns:
+        application/pdf 二进制流。
+    """
+    try:
+        from judicial_evidence_agent.core.export import export_report_pdf as _export
+
+        report_meta = {
+            "case_name": req.case_name or "案件",
+            "status": req.status or "",
+            "title": req.title or "",
+        }
+        pdf_bytes = _export(report_meta, req.markdown, title=req.title)
+
+        filename = f"{req.case_name or '报告'}_证据链审查报告.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{_url_quote(filename)}",
+            },
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": f"PDF 导出失败: {e}"}, 500
+
+
+@app.get("/api/reports/{report_id}/pdf")
+async def get_report_pdf(report_id: str):
+    """根据报告 ID 从数据库加载数据，生成 PDF 并返回。
+
+    组合：从 DB 加载报告元数据 + 证据 → 生成 Markdown → 导出 PDF。
+    """
+    import sqlite3, json
+
+    conn = sqlite3.connect("data/judicial_evidence.db")
+
+    # 加载报告元数据
+    row = conn.execute(
+        """SELECT a.case_id, a.case_name, a.review_status, a.judgment_key,
+                  a.case_summary, a.charges, a.evidence_types, a.applicable_articles,
+                  c.description, c.charge, c.article
+           FROM annotated_cases a
+           LEFT JOIN cases c ON a.case_id = c.case_id
+           WHERE a.case_id=?""",
+        (report_id,),
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        return JSONResponse(
+            {"error": "报告不存在", "report_id": report_id},
+            status_code=404,
+        )
+
+    # 加载证据片段
+    ev_rows = conn.execute(
+        "SELECT content_text, extracted_elements, modality FROM evidence_chunks WHERE case_id=? LIMIT 15",
+        (report_id,),
+    ).fetchall()
+    conn.close()
+
+    try:
+        charges = json.loads(row[5]) if row[5] else []
+    except Exception:
+        charges = []
+
+    # ── 构建 Markdown ──
+    case_name = row[1] or "案件"
+    status = {"confirmed": "pass", "rejected": "reject", "needs_supplement": "review"}.get(
+        row[2] or "", ""
+    )
+    summary = row[4] or row[9] or ""
+
+    lines = [
+        f"## 一、案件基本情况\n",
+        f"**案件名称**：{case_name}",
+        f"**案由**：{', '.join(charges[:3]) if charges else '（待补充）'}",
+        f"\n**案件事实**：\n\n{summary[:500]}\n",
+        f"## 二、案件材料处理概况\n",
+        f"- 证据片段：{len(ev_rows)} 条",
+        f"- 引用法条：{row[8] or '（无法条引用）'}\n",
+        f"## 三、核心证据链分析\n",
+    ]
+
+    if ev_rows:
+        lines.append("**已提取证据**：\n")
+        for i, ev in enumerate(ev_rows, 1):
+            content = (ev[0] or "")[:200]
+            try:
+                meta = json.loads(ev[1]) if ev[1] else {}
+                etype = meta.get("evidence_type", ev[2] or "证据")
+            except Exception:
+                etype = ev[2] or "证据"
+            lines.append(f"{i}. **{etype}**")
+            lines.append(f"   {content}\n")
+    else:
+        lines.append("（暂无证据材料）\n")
+
+    lines.append(f"## 四、对立证据与风险识别\n\n未发现明显证据冲突。\n")
+    lines.append(f"## 五、置信度审查说明\n\n审查状态：{status or '待审查'}\n")
+    lines.append(f"## 六、补证与复核建议\n\n根据审查结果确定。\n")
+
+    markdown = "\n".join(lines)
+
+    # ── 导出 PDF ──
+    try:
+        from judicial_evidence_agent.core.export import export_report_pdf as _export
+
+        report_meta = {"case_name": case_name, "status": status}
+        pdf_bytes = _export(report_meta, markdown, title=f"{case_name} — 证据链审查报告")
+
+        filename = f"{case_name}_证据链审查报告.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{_url_quote(filename)}",
+            },
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": f"PDF 导出失败: {e}"}, 500
+
+
+def _url_quote(s: str) -> str:
+    """简单 URL 编码中文文件名（避免依赖 urllib.parse）。"""
+    import urllib.parse
+    return urllib.parse.quote(s, safe='')
 
 
 @app.get("/api/reports/{report_id}")
@@ -989,13 +1202,17 @@ async def _retry_retrieval_and_review(
     Returns:
         {"confidence": float, "chunks": list[dict], "dimensions": list[dict]}
     """
-    from judicial_evidence_agent.core.evidence_chain import EvidenceChainAnalyzer
+    from judicial_evidence_agent.core.retrieval import get_retriever
     from judicial_evidence_agent.core.agents.base import AgentContext
     from judicial_evidence_agent.core.agents.confidence_reviewer import ConfidenceReviewerAgent
 
     # ── 检索（排除已见 chunk）──
-    analyzer = EvidenceChainAnalyzer(use_stub=False)
-    chunks = analyzer.retrieve(query, top_k=10, case_id=case_id, exclude_ids=exclude_ids)
+    retriever = get_retriever()
+    chunks = await retriever.search(query, case_id=case_id, top_k=10, min_score=0.0)
+    # 手动排除已见过的 chunk_ids（NumpyRetriever.search 暂不支持 exclude_ids，
+    # 需要在接口层扩展后再移除此手动过滤）
+    exclude_set = set(exclude_ids)
+    chunks = [c for c in chunks if c["chunk_id"] not in exclude_set]
 
     # ── 构建最小上下文，重算置信度 ──
     ctx = AgentContext(case_id=case_id, query=query)

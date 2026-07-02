@@ -11,23 +11,34 @@ interface CaseOption {
   fact?: string;
 }
 
-/** 简易 Markdown 渲染 — 支持标题/列表/粗体/代码 */
+/** 简易 Markdown 渲染 — 支持标题/列表/粗体/代码/引用 */
 function Markdown({ text }: { text: string }) {
   const html = text
+    // 转义 HTML
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    // 标题
     .replace(/^### (.+)$/gm, '<h4 class="text-sm font-semibold text-gray-800 mt-4 mb-2">$1</h4>')
     .replace(/^## (.+)$/gm, '<h3 class="text-base font-bold text-gray-800 mt-5 mb-3 border-b pb-1">$1</h3>')
     .replace(/^# (.+)$/gm, '<h2 class="text-lg font-bold text-gray-900 mt-6 mb-3">$1</h2>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+    // 行内格式
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-gray-800">$1</strong>')
     .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 rounded text-xs">$1</code>')
-    .replace(/^> (.+)$/gm, '<blockquote class="border-l-2 border-gray-300 pl-3 text-gray-500 text-xs">$1</blockquote>')
-    .replace(/\n\n/g, "</p><p class='mb-2'>")
-    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc text-sm">$1</li>')
-    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal text-sm">$2</li>')
-    .replace(/(<li[^>]*>.*<\/li>\n?)+/g, '<ul class="mb-2">$&</ul>')
-    // 清理重复的ul
-    .replace(/<\/ul>\n<ul class="mb-2">/g, "")
-    .replace(/<\/p><p class='mb-2'><\/p>/g, "</p>");
+    // 引用（独立行，确保每项分行）
+    .replace(/^&gt; (.+)$/gm, '<div class="text-xs text-gray-400 mt-1 pl-2 border-l-2 border-gray-200">$1</div>')
+    // 无序列表
+    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc text-sm mb-1">$1</li>')
+    // 有序列表
+    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal text-sm mb-1">$2</li>')
+    // 连续的 <li> 包进 <ul>
+    .replace(/(<li[^>]*>.*?<\/li>\n?)+/g, '<ul class="mb-3 space-y-1">$&</ul>')
+    // 清理重复 ul
+    .replace(/<\/ul>\n?<ul class="mb-3 space-y-1">/g, "")
+    // 双换行 → 段落分隔
+    .replace(/\n\n/g, "</p><p class='mb-3'>")
+    // 单换行 → <br>（保证同段落内的换行可见）
+    .replace(/\n/g, "<br>")
+    // 清理空段落
+    .replace(/<p class='mb-3'><\/p>/g, "");
 
   return <div dangerouslySetInnerHTML={{ __html: `<p class='mb-2'>${html}</p>` }} />;
 }
@@ -42,6 +53,7 @@ export function Analysis() {
   const [loading, setLoading] = useState(false);
   const [elapsed, setElapsed] = useState<number>(0);
   const [result, setResult] = useState<string | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [confidence, setConfidence] = useState<any>(null);
   const [chunks, setChunks] = useState<any[]>([]);
   const [localEvidence, setLocalEvidence] = useState<any[]>([]);
@@ -340,6 +352,68 @@ export function Analysis() {
                   <span className={`text-xs px-2 py-1 rounded ${mode === "fast" ? "bg-green-50 text-green-600" : "bg-blue-50 text-blue-600"}`}>
                     {mode === "fast" ? "规则引擎" : "DeepSeek"}
                   </span>
+                  {/* 导出 PDF 按钮 */}
+                  <button
+                    onClick={async () => {
+                      if (!result) {
+                        alert("暂无报告内容，无法导出");
+                        return;
+                      }
+                      setExportingPdf(true);
+                      try {
+                        const caseName = selectedCase?.case_name || "案件";
+                        const status = confidence?.threshold_result || "";
+                        const body = JSON.stringify({
+                          case_name: caseName,
+                          title: `${caseName} — 证据链审查报告`,
+                          markdown: result,
+                          status: status,
+                        });
+                        console.log("[PDF Export] Sending request, markdown length:", result.length);
+                        const res = await fetch("/api/reports/export-pdf", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body,
+                        });
+                        console.log("[PDF Export] Response status:", res.status, "type:", res.headers.get("content-type"));
+                        if (!res.ok) {
+                          const errText = await res.text();
+                          console.error("[PDF Export] Server error:", res.status, errText);
+                          throw new Error(`服务器返回 ${res.status}: ${errText.slice(0, 100)}`);
+                        }
+                        const blob = await res.blob();
+                        console.log("[PDF Export] Blob size:", blob.size, "type:", blob.type);
+                        if (blob.size < 1000) {
+                          // 太小的文件可能是错误响应
+                          const text = await blob.text();
+                          console.error("[PDF Export] Small response:", text);
+                          throw new Error("PDF 内容异常: " + text.slice(0, 100));
+                        }
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `${caseName}_证据链审查报告.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                      } catch (e: any) {
+                        console.error("[PDF Export] Failed:", e);
+                        alert(`PDF 导出失败: ${e.message || "未知错误"}\n\n请打开浏览器控制台 (F12) 查看详细日志`);
+                      } finally {
+                        setExportingPdf(false);
+                      }
+                    }}
+                    disabled={exportingPdf}
+                    className={`text-xs px-3 py-1.5 border rounded-lg transition-colors ${
+                      exportingPdf
+                        ? "text-gray-300 border-gray-200 cursor-wait"
+                        : "text-gray-500 hover:text-blue-600 hover:border-blue-300"
+                    }`}
+                    title="导出为 PDF 文件"
+                  >
+                    {exportingPdf ? "导出中..." : "导出 PDF"}
+                  </button>
                 </div>
               </div>
               <div className="prose prose-sm max-w-none text-gray-700">

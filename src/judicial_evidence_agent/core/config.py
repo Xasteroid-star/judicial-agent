@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Embedding
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
 
+    # 向量库后端: numpy | chroma | pgvector | milvus
+    vector_backend: str = "numpy"
+
     # MinIO
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "minioadmin"

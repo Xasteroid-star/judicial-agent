@@ -11,6 +11,44 @@ from typing import Optional
 
 from judicial_evidence_agent.core.agents.base import BaseAgent, AgentContext
 
+def _extract_keyword_context(text: str, keyword: str, radius: int = 80) -> str:
+    """提取关键词周围的上下文句子片段。
+
+    Args:
+        text: 全文。
+        keyword: 要定位的关键词。
+        radius: 关键词两侧各取的字符数。
+
+    Returns:
+        包含关键词的句子级片段，对齐到句号边界。
+    """
+    idx = text.find(keyword)
+    if idx < 0:
+        return text[:radius * 2] + ("…" if len(text) > radius * 2 else "")
+
+    start = max(0, idx - radius)
+    end = min(len(text), idx + radius)
+    snippet = text[start:end].strip()
+
+    # 左边界对齐到句号后
+    first_dot = snippet.find("。")
+    if 0 < first_dot < radius:
+        snippet = snippet[first_dot + 1:]
+
+    # 右边界对齐到句号
+    last_dot = snippet.rfind("。")
+    if last_dot > len(snippet) * 0.5:
+        snippet = snippet[:last_dot + 1]
+
+    # 添加省略标记
+    if start > 0 and not snippet.startswith("…"):
+        snippet = "…" + snippet
+    if end < len(text):
+        snippet = snippet + "…"
+
+    return snippet.strip()
+
+
 # ── 证据类型关键词映射（从 case_context 直接解析，LLM 不可用时的 fallback） ──
 EVIDENCE_KW_MAP = {
     "监控录像": "视听资料", "监控": "视听资料", "录音录像": "视听资料",
@@ -77,7 +115,11 @@ class EvidenceChainAgent(BaseAgent):
 
     @staticmethod
     def _parse_evidence_from_text(text: str) -> dict[str, list[dict]]:
-        """从案件文本直接解析证据项（不依赖 RAG / LLM）。"""
+        """从案件文本直接解析证据项（不依赖 RAG / LLM）。
+
+        改进：不再取全文字前 80 字，而是定位关键词所在句子，
+        确保不同证据类型的内容各不相同。
+        """
         evidence_by_type: dict[str, list[dict]] = {}
         e_data_subs = {
             "银行流水": "电子数据(流水)", "交易流水": "电子数据(流水)",
@@ -91,9 +133,11 @@ class EvidenceChainAgent(BaseAgent):
                 actual_type = e_data_subs.get(kw, etype)
                 if actual_type not in evidence_by_type:
                     evidence_by_type[actual_type] = []
+                # 提取关键词周围的句子片段，而非全文前 80 字
+                snippet = _extract_keyword_context(text, kw, radius=80)
                 evidence_by_type[actual_type].append({
                     "type": actual_type,
-                    "content": f"{text[:80]}...",
+                    "content": snippet,
                     "confidence": 0.80 if kw in ["DNA", "监控录像", "银行流水", "交易流水"] else 0.70,
                     "chunk_id": f"parsed-{actual_type}",
                 })

@@ -2,17 +2,20 @@
 
 检索策略：向量检索 + 关键词检索 + 多维度过滤。
 检索源：案卷证据片段、法条、司法解释、证据审查规则。
+
+所有向量/关键词检索统一走 RetrievalInterface，方便切换后端
+（numpy / Chroma / pgvector / Milvus）。
 """
 
 from judicial_evidence_agent.core.agents.base import BaseAgent, AgentContext
-from judicial_evidence_agent.core.evidence_chain import EvidenceChainAnalyzer
+from judicial_evidence_agent.core.retrieval import get_retriever
 
 
 class RAGRetrieverAgent(BaseAgent):
     """RAG 检索 Agent。
 
     职责：
-    1. 根据查询从 Chroma 向量库检索相关法条 + 案件证据
+    1. 根据查询从向量库检索相关法条 + 案件证据
     2. 法条按生效日期倒序（新法优先）
     3. 返回携带来源引用的检索结果
     """
@@ -54,8 +57,8 @@ class RAGRetrieverAgent(BaseAgent):
                 pass
 
         # 策略2：向量+关键词检索补充法条和相似案例
-        # retrieve() 内部双通道：法条全局检索、证据按 case_id 过滤
-        analyzer = EvidenceChainAnalyzer(use_stub=False)
+        # 统一走 RetrievalInterface（后端由 JEA_VECTOR_BACKEND 环境变量控制）
+        retriever = get_retriever()
 
         search_terms = [ctx.case_context, ctx.query]
         for e in ctx.extracted_elements[:5]:
@@ -63,7 +66,9 @@ class RAGRetrieverAgent(BaseAgent):
                 search_terms.append(f"{e['category']}:{e['value']}")
         search_query = " ".join(t for t in search_terms if t)
 
-        retrieved = analyzer.retrieve(search_query, top_k=10, case_id=ctx.case_id)
+        retrieved = await retriever.search(
+            search_query, case_id=ctx.case_id, top_k=10, min_score=0.0
+        )
 
         # 法条去重
         seen_ids = {c["chunk_id"] for c in case_chunks}

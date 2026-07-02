@@ -84,6 +84,12 @@ class EvidenceChainAnalyzer:
 
         # Reranker 改为懒加载（不阻塞启动，首次 _rerank() 调用时才加载）
 
+        # LLM 客户端
+        if use_stub:
+            self._llm = StubLLM()
+        else:
+            self._llm = LLMClient(model=settings.anthropic_model)
+
     @staticmethod
     def _build_bm25_index(metadata: list[dict]):
         """构建 BM25 关键词索引。"""
@@ -96,14 +102,6 @@ class EvidenceChainAnalyzer:
             tokens = list(jieba.cut(m.get("content", "")[:500]))
             corpus.append(tokens)
         return BM25Okapi(corpus)
-
-        # LLM
-        if use_stub:
-            self._llm = StubLLM()
-        else:
-            from judicial_evidence_agent.core.config import settings
-
-            self._llm = LLMClient(model=settings.anthropic_model)
 
     def retrieve(
         self,
